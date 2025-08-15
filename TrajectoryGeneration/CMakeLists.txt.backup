@@ -1,0 +1,204 @@
+cmake_minimum_required(VERSION 3.12)
+project(dual_arm_planner)
+
+# Set C++ standard
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Add /usr/local to search paths
+set(CMAKE_PREFIX_PATH /usr/local ${CMAKE_PREFIX_PATH})
+list(APPEND CMAKE_MODULE_PATH /usr/local/lib/cmake)
+list(APPEND CMAKE_MODULE_PATH /usr/local/share/cmake)
+
+# Include directories for manually installed libraries
+include_directories(/usr/local/include)
+link_directories(/usr/local/lib)
+
+# Find required packages
+find_package(PkgConfig REQUIRED)
+find_package(Eigen3 REQUIRED)
+find_package(pinocchio REQUIRED)
+find_package(ezc3d REQUIRED)
+find_package(yaml-cpp REQUIRED)
+
+
+# find_package(Boost REQUIRED COMPONENTS serialization timer chrono)
+
+# Find GTSAM libraries manually
+find_path(GTSAM_INCLUDE_DIR gtsam/base/Matrix.h PATHS /usr/local/include)
+find_library(GTSAM_LIBRARY gtsam PATHS /usr/local/lib)
+find_library(GTSAM_UNSTABLE_LIBRARY gtsam_unstable PATHS /usr/local/lib)
+find_library(METIS_GTSAM_LIBRARY metis-gtsam PATHS /usr/local/lib)
+find_library(CEPHES_GTSAM_LIBRARY cephes-gtsam PATHS /usr/local/lib)
+
+if(GTSAM_INCLUDE_DIR AND GTSAM_LIBRARY)
+    set(GTSAM_INCLUDE_DIRS ${GTSAM_INCLUDE_DIR})
+    set(GTSAM_LIBRARIES ${GTSAM_LIBRARY})
+    
+    # Add optional GTSAM libraries if found
+    if(GTSAM_UNSTABLE_LIBRARY)
+        list(APPEND GTSAM_LIBRARIES ${GTSAM_UNSTABLE_LIBRARY})
+    endif()
+    if(METIS_GTSAM_LIBRARY)
+        list(APPEND GTSAM_LIBRARIES ${METIS_GTSAM_LIBRARY})
+    endif()
+    if(CEPHES_GTSAM_LIBRARY)
+        list(APPEND GTSAM_LIBRARIES ${CEPHES_GTSAM_LIBRARY})
+    endif()
+    
+    message(STATUS "Found GTSAM libraries: ${GTSAM_LIBRARIES}")
+else()
+    message(FATAL_ERROR "GTSAM not found in /usr/local")
+endif()
+
+# Find GPMP2 libraries manually
+find_path(GPMP2_INCLUDE_DIR gpmp2/kinematics/ArmModel.h PATHS /usr/local/include)
+find_library(GPMP2_LIBRARY gpmp2 PATHS /usr/local/lib)
+
+if(GPMP2_INCLUDE_DIR AND GPMP2_LIBRARY)
+    set(GPMP2_INCLUDE_DIRS ${GPMP2_INCLUDE_DIR})
+    set(GPMP2_LIBRARIES ${GPMP2_LIBRARY})
+    message(STATUS "Found GPMP2 library: ${GPMP2_LIBRARY}")
+else()
+    message(FATAL_ERROR "GPMP2 not found in /usr/local")
+endif()
+
+## Find yaml-cpp
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(YAMLCPP REQUIRED yaml-cpp)
+
+# Find ezc3d manually
+find_path(EZC3D_INCLUDE_DIR ezc3d/ezc3d.h PATHS /usr/local/include)
+find_library(EZC3D_LIBRARY ezc3d PATHS /usr/local/lib)
+
+if(EZC3D_INCLUDE_DIR AND EZC3D_LIBRARY)
+    set(EZC3D_INCLUDE_DIRS ${EZC3D_INCLUDE_DIR})
+    set(EZC3D_LIBRARIES ${EZC3D_LIBRARY})
+    message(STATUS "Found ezc3d: ${EZC3D_LIBRARY}")
+ else()
+    message(FATAL_ERROR "ezc3d not found. Please install ezc3d library.")
+ endif()
+
+# Set Kinova API Path
+set(KINOVA_API_PATH /home/bjorn/Kinova-kortex2_Gen3_G3L/api_cpp/examples)
+set(KORTEX_DIR "${KINOVA_API_PATH}/kortex_api/")
+
+# Use Kinova's library selection logic
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(KORTEX_LIB_SUBDIR "debug")
+else()
+    set(KORTEX_LIB_SUBDIR "release")
+endif()
+
+# Link to Kinova's pre-built static library (Critical)
+link_libraries(${KORTEX_DIR}lib/${KORTEX_LIB_SUBDIR}/libKortexApiCpp.a)
+
+# Use their exact include directories
+include_directories(${KORTEX_DIR}include)
+include_directories(${KORTEX_DIR}include/client)
+include_directories(${KORTEX_DIR}include/common)
+include_directories(${KORTEX_DIR}include/messages)
+include_directories(${KORTEX_DIR}include/client_stubs)
+
+
+# Include directories
+include_directories(
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../thirdParty
+    ${GTSAM_INCLUDE_DIRS}
+    ${GPMP2_INCLUDE_DIRS}
+    ${EIGEN3_INCLUDE_DIR}
+#    ${Boost_INCLUDE_DIRS}
+    ${YAMLCPP_INCLUDE_DIRS}
+    ${EZC3D_INCLUDE_DIRS}
+    /usr/local/include
+)
+
+# Compiler flags
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -Wall -Wextra")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG")
+
+# Add linker flags for better symbol resolution
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-as-needed")
+
+# Source files
+set(SOURCES
+    src/utils.cpp
+    src/Obstacles.cpp
+    src/GenerateArmModel.cpp
+    src/GenerateLogs.cpp
+    src/TrajectoryInitiation.cpp
+    src/TrajectoryOptimization.cpp
+    src/Planner.cpp
+    src/Tube.cpp
+    src/main.cpp
+)
+
+# Header files (for IDE support)
+set(HEADERS
+    include/utils.h
+    include/Obstacles.h
+    include/GenerateArmModel.h
+    include/GenerateLogs.h
+    include/JerkPenaltyFactor.h
+    include/TrajectoryInitiation.h
+    include/TrajectoryOptimization.h
+    include/quik_solveIK.h
+    include/spline.h
+    include/Planner.h
+    include/Tube.h
+    # include/KinovaTrajectory.h
+    # include/KinovaGripper.h
+
+    # quik headers (header-only library)
+    ../thirdParty/quik/IKSolver.h
+    ../thirdParty/quik/Robot.h
+    ../thirdParty/quik/geometry.h
+)
+
+# Create executable
+add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
+
+# Set RPATH so the executable can find the libraries
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    INSTALL_RPATH "/usr/local/lib:/opt/openrobots/lib"
+    BUILD_WITH_INSTALL_RPATH TRUE
+)
+
+# Link libraries - VERY IMPORTANT: Order matters for static linking!
+# Link in reverse dependency order: highest level first
+
+target_link_libraries(${PROJECT_NAME}
+    ${GPMP2_LIBRARIES}
+    ${GTSAM_LIBRARIES}
+    ${Boost_LIBRARIES}
+    ${EZC3D_LIBRARIES}
+    ${YAMLCPP_LIBRARIES}
+    console_bridge
+    pthread
+    dl
+)
+
+# Add compiler definitions
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    ${YAMLCPP_CFLAGS_OTHER}
+)
+
+# Installation
+install(TARGETS ${PROJECT_NAME}
+    RUNTIME DESTINATION bin
+)
+
+# Copy config file to build directory
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/../config/joint_limits.yaml
+    ${CMAKE_CURRENT_BINARY_DIR}/../config/joint_limits.yaml
+    COPYONLY
+)
+
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/../config/dh_params.yaml
+    ${CMAKE_CURRENT_BINARY_DIR}/../config/dh_params.yaml
+    COPYONLY
+)

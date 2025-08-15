@@ -1,0 +1,192 @@
+cmake_minimum_required(VERSION 3.5)
+
+project(ExperimentalCodes VERSION 2.6.0 LANGUAGES C CXX)
+
+set(CMAKE_INCLUDE_CURRENT_DIR   ON)
+set(CMAKE_VERBOSE_MAKEFILE      ON)
+set(CMAKE_COLOR_MAKEFILE        ON)
+
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
+endif()
+
+
+# Activate C++ 17
+set (CMAKE_CXX_STANDARD 17)
+set(CMAKE_C_STANDARD 17)  # Or C11 or whatever C version you are using
+
+macro(configure_msvc_runtime)
+
+    # Default to statically-linked runtime.
+    if("${MSVC_RUNTIME}" STREQUAL "")
+        set(MSVC_RUNTIME "static")
+    endif()
+
+    # Set compiler options.
+    set(variables
+            CMAKE_C_FLAGS_DEBUG
+            CMAKE_C_FLAGS_MINSIZEREL
+            CMAKE_C_FLAGS_RELEASE
+            CMAKE_C_FLAGS_RELWITHDEBINFO
+            CMAKE_CXX_FLAGS_DEBUG
+            CMAKE_CXX_FLAGS_MINSIZEREL
+            CMAKE_CXX_FLAGS_RELEASE
+            CMAKE_CXX_FLAGS_RELWITHDEBINFO
+    )
+
+    if(${MSVC_RUNTIME} STREQUAL "static")
+        message(STATUS
+                "MSVC -> forcing use of statically-linked runtime."
+        )
+        foreach(variable ${variables})
+            if(${variable} MATCHES "/MD")
+                string(REGEX REPLACE "/MD" "/MT" ${variable} "${${variable}}")
+            endif()
+        endforeach()
+
+    else()
+        message(STATUS
+                "MSVC -> forcing use of dynamically-linked runtime."
+        )
+        foreach(variable ${variables})
+            if(${variable} MATCHES "/MT")
+                string(REGEX REPLACE "/MT" "/MD" ${variable} "${${variable}}")
+            endif()
+        endforeach()
+
+    endif()
+
+endmacro()
+
+
+include_directories(${PROJECT_SOURCE_DIR}/../thirdParty/cxxopts/)
+
+if(MSVC)
+    configure_msvc_runtime()
+else()
+    add_compile_options(-Wall)
+    add_compile_options(-Wno-reorder)
+
+endif()
+
+if(UNIX)
+    add_definitions(-D_OS_UNIX)
+elseif(WIN32)
+    add_definitions(-D_OS_WINDOWS -DNOMINMAX)
+    if(MSVC)
+        add_compile_options(/bigobj)
+    endif()
+endif()
+
+# Find GTSAM libraries manually
+find_path(GTSAM_INCLUDE_DIR gtsam/base/Matrix.h PATHS /usr/local/include)
+find_library(GTSAM_LIBRARY gtsam PATHS /usr/local/lib)
+find_library(GTSAM_UNSTABLE_LIBRARY gtsam_unstable PATHS /usr/local/lib)
+find_library(METIS_GTSAM_LIBRARY metis-gtsam PATHS /usr/local/lib)
+find_library(CEPHES_GTSAM_LIBRARY cephes-gtsam PATHS /usr/local/lib)
+
+if(GTSAM_INCLUDE_DIR AND GTSAM_LIBRARY)
+    set(GTSAM_INCLUDE_DIRS ${GTSAM_INCLUDE_DIR})
+    set(GTSAM_LIBRARIES ${GTSAM_LIBRARY})
+    
+    # Add optional GTSAM libraries if found
+    if(GTSAM_UNSTABLE_LIBRARY)
+        list(APPEND GTSAM_LIBRARIES ${GTSAM_UNSTABLE_LIBRARY})
+    endif()
+    if(METIS_GTSAM_LIBRARY)
+        list(APPEND GTSAM_LIBRARIES ${METIS_GTSAM_LIBRARY})
+    endif()
+    if(CEPHES_GTSAM_LIBRARY)
+        list(APPEND GTSAM_LIBRARIES ${CEPHES_GTSAM_LIBRARY})
+    endif()
+    
+    message(STATUS "Found GTSAM libraries: ${GTSAM_LIBRARIES}")
+else()
+    message(FATAL_ERROR "GTSAM not found in /usr/local")
+endif()
+
+# Find GPMP2 libraries manually
+find_path(GPMP2_INCLUDE_DIR gpmp2/kinematics/ArmModel.h PATHS /usr/local/include)
+find_library(GPMP2_LIBRARY gpmp2 PATHS /usr/local/lib)
+
+if(GPMP2_INCLUDE_DIR AND GPMP2_LIBRARY)
+    set(GPMP2_INCLUDE_DIRS ${GPMP2_INCLUDE_DIR})
+    set(GPMP2_LIBRARIES ${GPMP2_LIBRARY})
+    message(STATUS "Found GPMP2 library: ${GPMP2_LIBRARY}")
+else()
+    message(FATAL_ERROR "GPMP2 not found in /usr/local")
+endif()
+
+# Set Kinova API Path
+set(KINOVA_API_PATH /home/bjorn/Kinova-kortex2_Gen3_G3L/api_cpp/examples)
+set(KORTEX_DIR "${KINOVA_API_PATH}/kortex_api/")
+
+# Use Kinova's library selection logic
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(KORTEX_LIB_SUBDIR "debug")
+else()
+    set(KORTEX_LIB_SUBDIR "release")
+endif()
+
+# Link to Kinova's pre-built static library (Critical)
+link_libraries(${KORTEX_DIR}lib/${KORTEX_LIB_SUBDIR}/libKortexApiCpp.a)
+
+# Use their exact include directories
+include_directories(${KORTEX_DIR}include)
+include_directories(${KORTEX_DIR}include/client)
+include_directories(${KORTEX_DIR}include/common)
+include_directories(${KORTEX_DIR}include/messages)
+include_directories(${KORTEX_DIR}include/client_stubs)
+
+
+# link other libs
+if(UNIX)
+    link_libraries(pthread)
+elseif(WIN32)
+    link_libraries(winMM ws2_32)
+else()
+    MESSAGE(FATAL_ERROR "Unknown os! Not supported yet")
+endif()
+
+find_package(Eigen3 REQUIRED)
+find_package(pinocchio REQUIRED)
+
+include_directories(
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../thirdParty
+    ${GTSAM_INCLUDE_DIRS}
+    ${GPMP2_INCLUDE_DIRS}
+    ${EIGEN3_INCLUDE_DIR}
+    ${PINOCCHIO_INCLUDE_DIRS}
+    /usr/local/include
+)
+
+
+set(SOURCES
+    src/Controller.cpp
+    src/Dynamics.cpp
+    src/Filter.cpp
+    src/Fwd_kinematics.cpp
+    src/Jacobian.cpp
+    src/main.cpp
+)
+
+# Header files (for IDE support)
+set(HEADERS
+    include/Controller.h
+    include/Dynamics.h
+    include/Filter.h
+    include/Fwd_kinematics.h
+    include/Jacobian.h
+    include/KinovaTrajectory.h
+    # include/KinovaGripper.h
+)
+
+# Create executable for each example
+add_executable(test_impedance_control ${SOURCES} ${HEADERS})
+
+target_link_libraries(test_impedance_control 
+    ${PINOCCHIO_LIBRARIES}
+    ${EIGEN3_LIBRARIES}
+)
+

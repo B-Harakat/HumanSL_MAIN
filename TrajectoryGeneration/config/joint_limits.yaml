@@ -1,0 +1,100 @@
+# Kinova Gen3 7-DOF Joint Limits
+# Based on official Kinova documentation Tables 39, 41, and 43
+
+robot_name: kinova_gen3
+dof: 7
+
+# Joint position limits (Table 39)
+position_limits:
+  actuator_1:
+    lower_limit: -1e20  # (continuous rotation)
+    upper_limit: 1e20   # (continuous rotation)
+    unit: "radians"
+  actuator_2:
+    lower_limit: -2.2515  # -128.9°
+    upper_limit: 2.2515   # +128.9°
+    unit: "radians"
+  actuator_3:
+    lower_limit: -1e20  # (continuous rotation)
+    upper_limit: 1e20   # (continuous rotation)
+    unit: "radians"
+  actuator_4:
+    lower_limit: -2.5807  # -147.8°
+    upper_limit: 2.5807   # +147.8°
+    unit: "radians"
+  actuator_5:
+    lower_limit: -1e20  # (continuous rotation)
+    upper_limit: 1e20   # (continuous rotation)
+    unit: "radians"
+  actuator_6:
+    lower_limit: -2.0996  # -120.3°
+    upper_limit: 2.0996   # +120.3°
+    unit: "radians"
+  actuator_7:
+    lower_limit: -1e20  #  (continuous rotation)
+    upper_limit: 1e20   #  (continuous rotation)
+    unit: "radians"
+
+# Joint velocity limits (Table 41)
+# For admittance and force control modes
+velocity_limits:
+  actuator_1:
+    lower_limit: -0.8727  # -50.0°/s
+    upper_limit: 0.8727   # +50.0°/s
+    unit: "rad/s"
+  actuator_2:
+    lower_limit: -0.8727  # -50.0°/s
+    upper_limit: 0.8727   # +50.0°/s
+    unit: "rad/s"
+  actuator_3:
+    lower_limit: -0.8727  # -50.0°/s
+    upper_limit: 0.8727   # +50.0°/s
+    unit: "rad/s"
+  actuator_4:
+    lower_limit: -0.8727  # -50.0°/s
+    upper_limit: 0.8727   # +50.0°/s
+    unit: "rad/s"
+  actuator_5:
+    lower_limit: -0.8727  # -50.0°/s
+    upper_limit: 0.8727   # +50.0°/s
+    unit: "rad/s"
+  actuator_6:
+    lower_limit: -0.8727  # -50.0°/s
+    upper_limit: 0.8727   # +50.0°/s
+    unit: "rad/s"
+  actuator_7:
+    lower_limit: -0.8727  # -50.0°/s
+    upper_limit: 0.8727   # +50.0°/s
+    unit: "rad/s"
+
+# Joint acceleration limits (Table 43)
+# For angular joystick and joint trajectory
+acceleration_limits:
+  actuator_1:
+    lower_limit: -1.0   # -57.3°/s²
+    upper_limit: 1.0    # +57.3°/s²
+    unit: "rad/s²"
+  actuator_2:
+    lower_limit: -1.0   # -57.3°/s²
+    upper_limit: 1.0    # +57.3°/s²
+    unit: "rad/s²"
+  actuator_3:
+    lower_limit: -1.0   # -57.3°/s²
+    upper_limit: 1.0    # +57.3°/s²
+    unit: "rad/s²"
+  actuator_4:
+    lower_limit: -1.0   # -57.3°/s²
+    upper_limit: 1.0    # +57.3°/s²
+    unit: "rad/s²"
+  actuator_5:
+    lower_limit: -10.0  # -572.95°/s²
+    upper_limit: 10.0   # +572.95°/s²
+    unit: "rad/s²"
+  actuator_6:
+    lower_limit: -10.0  # -572.95°/s²
+    upper_limit: 10.0   # +572.95°/s²
+    unit: "rad/s²"
+  actuator_7:
+    lower_limit: -10.0  # -572.95°/s²
+    upper_limit: 10.0   # +572.95°/s²
+    unit: "rad/s²"

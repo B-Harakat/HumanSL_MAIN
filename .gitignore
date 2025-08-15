@@ -1,0 +1,17 @@
+# Include only specific folders and files
+/*
+
+# But include these folders
+!TrajectoryRealTime/
+!TrajectoryGeneration/
+!TrajectoryExecution/
+!ViconDataStream/
+
+# Include all .cpp files in root
+!*.cpp
+
+# Include root CMakeLists.txt
+!CMakeLists.txt
+
+# Include this .gitignore file
+!.gitignore

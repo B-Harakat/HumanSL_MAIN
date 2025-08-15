@@ -1,0 +1,53 @@
+# Kinova Gen3 7-DOF DH Parameters
+# Based on official Kinova documentation Table 94
+
+dh_parameters:
+  - joint_id: 1
+    joint_name: "Actuator1"
+    joint_type: "continuous"
+    a: 0.0
+    alpha: 1.5707963267948966
+    d: -0.2848
+    theta_offset: 0.0
+  - joint_id: 2
+    joint_name: "Actuator2"
+    joint_type: "revolute"
+    a: 0.0
+    alpha: 1.5707963267948966
+    d: -0.0118
+    theta_offset: 3.141592653589793
+  - joint_id: 3
+    joint_name: "Actuator3"
+    joint_type: "continuous"
+    a: 0.0
+    alpha: 1.5707963267948966
+    d: -0.4208
+    theta_offset: 3.141592653589793
+  - joint_id: 4
+    joint_name: "Actuator4"
+    joint_type: "revolute"
+    a: 0.0
+    alpha: 1.5707963267948966
+    d: -0.0128
+    theta_offset: 3.141592653589793
+  - joint_id: 5
+    joint_name: "Actuator5"
+    joint_type: "continuous"
+    a: 0.0
+    alpha: 1.5707963267948966
+    d: -0.3143
+    theta_offset: 3.141592653589793
+  - joint_id: 6
+    joint_name: "Actuator6"
+    joint_type: "revolute"
+    a: 0.0
+    alpha: 1.5707963267948966
+    d: 0.0
+    theta_offset: 3.141592653589793
+  - joint_id: 7
+    joint_name: "Actuator7_to_interface"
+    joint_type: "continuous"
+    a: 0.0
+    alpha: 3.141592653589793
+    d: -0.3074   # -0.1674 - 0.14 (original d for kinova + offset to gripper grasp site) 
+    theta_offset: 3.141592653589793

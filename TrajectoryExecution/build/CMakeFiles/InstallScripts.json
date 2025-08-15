@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/bjorn/Code/gpmp2/TrajectoryExecution/build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
