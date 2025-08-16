@@ -19,7 +19,7 @@ bool joint_impedance_control_single(k_api::Base::BaseClient* base, k_api::BaseCy
                                     k_api::ActuatorConfig::ActuatorConfigClient* actuator_config, k_api::BaseCyclic::Feedback& base_feedback, k_api::BaseCyclic::Command& base_command, 
                                     Dynamics &robot,
                                     VectorXd& q_d, VectorXd& dq_d, VectorXd& ddq_d, 
-                                    VectorXd& K_joint_diag, int control_frequency);
+                                    VectorXd& K_joint_diag, VectorXd& q_cur, int control_frequency);
 
 void joint_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::BaseCyclicClient* base_cyclic, 
                                 k_api::ActuatorConfig::ActuatorConfigClient* actuator_config, k_api::BaseCyclic::Feedback& base_feedback, k_api::BaseCyclic::Command& base_command,

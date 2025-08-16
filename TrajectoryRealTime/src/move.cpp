@@ -20,8 +20,10 @@ bool joint_position_control_single(k_api::Base::BaseClient* base,
     base_feedback = base_cyclic->RefreshFeedback();
 
     for(int i = 0; i < num_joints; i++) {
-        q_cur[i] = base_feedback.actuators(i).position();  
+        q_cur[i] = base_feedback.actuators(i).position();
     }
+
+    shiftAngleInPlace(q_cur);  
 
     for(int i = 0; i < num_joints; i++) {
         base_command.mutable_actuators(i)->set_position(q_d[i]);
@@ -59,7 +61,7 @@ bool joint_impedance_control_single(k_api::Base::BaseClient* base, k_api::BaseCy
                                     k_api::ActuatorConfig::ActuatorConfigClient* actuator_config, k_api::BaseCyclic::Feedback& base_feedback, k_api::BaseCyclic::Command& base_command,
                                     Dynamics &robot,
                                     VectorXd& q_d, VectorXd& dq_d, VectorXd& ddq_d, VectorXd& last_dq,
-                                    VectorXd& K_joint_diag, int control_frequency) {
+                                    VectorXd& K_joint_diag, VectorXd& q_cur, int control_frequency) {
 
 
     // KINOVA feedback (joint space variables)
@@ -79,13 +81,17 @@ bool joint_impedance_control_single(k_api::Base::BaseClient* base, k_api::BaseCy
         // KINOVA Feedback: Get actual joint positions, velocities, torques & current
         for (int i = 0; i < ACTUATOR_COUNT; i++)
         {
-            q[i] = (M_PI/180) * base_feedback.actuators(i).position();
+            q_cur[i] = base_feedback.actuators(i).position();
+            // q[i] = (M_PI/180) * base_feedback.actuators(i).position();
             dq[i] = (M_PI/180) * base_feedback.actuators(i).velocity();
         }
-
+        
         ddq = (dq - last_dq) / dt;
         last_dq = dq;
 
+        shiftAngleInPlace(q_cur);
+        q = q_cur * (M_PI/180);
+        
         // Joint space impedance controller
         std::tie(u) = joint_impedance_controller(robot, q, dq, ddq, q_d, dq_d, ddq_d, 
                                         K_joint_diag, control_frequency, dt);
@@ -158,23 +164,28 @@ void joint_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::B
         auto start_control = chrono::high_resolution_clock::now();
 
         // Thread-safe trajectory access
-        Eigen::VectorXd q_d, dq_d, ddq_d;
+        Eigen::VectorXd q_d, dq_d, ddq_d, last_dq;
         {
             std::lock_guard<std::mutex> lock(trajectory_mutex);
 
             // if(trajectory.pos.size()%100 == 0) std::cout << trajectory.pos.size() << "\n";
             
             auto [q, dq, ddq] = pop_front(trajectory);
-            q_d = q; dq_d = dq; ddq_d = ddq;
+            q_d = q; dq_d = dq; ddq_d = ddq; last_dq = dq;
 
 
         }
         
         // auto start_control_test_1 = chrono::high_resolution_clock::now();
 
-        if(!joint_position_control_single(base,base_cyclic,base_feedback, base_command, q_d, q_cur)){
-            throw std::runtime_error("ERROR: joint_position_control_single");
-        }
+        // if(!joint_position_control_single(base,base_cyclic,base_feedback, base_command, q_d, q_cur)){
+        //     throw std::runtime_error("ERROR: joint_position_control_single");
+        // }
+
+
+        if(!joint_impedance_control_single(base, base_cyclic, actuator_config, base_feedback, base_command, robot, q_d, dq_d, ddq_d, last_dq, K_joint_diag, q_cur, control_frequency)){
+            throw std::runtime_error("ERROR: joint_impedance_control_single");
+        };
 
         record.target_trajectory.push_back(q_d);
         record.actual_trajectory.push_back(q_cur);

@@ -322,7 +322,7 @@ tuple<VectorXd, VectorXd, VectorXd, VectorXd> Controller::task_impedance_control
 
     // Joint torques limits
     VectorXd gen3_JointTorquesLimits(7);
-    gen3_JointTorquesLimits << 55, 55, 55, 55, 25, 25, 25;
+    gen3_JointTorquesLimits << 50, 50, 50, 50, 25, 25, 25;
 
     // Define the model matrices used in controller
     // MatrixXd mass_matrix(7,7);
@@ -461,7 +461,7 @@ tuple<VectorXd> Controller::joint_impedance_controller(Dynamics &robot, VectorXd
 
     // Joint torques limits
     VectorXd gen3_JointTorquesLimits(7);
-    gen3_JointTorquesLimits << 39, 39, 39, 39, 9, 9, 9;
+    gen3_JointTorquesLimits << 50,50,50,50,25,25,25;
 
     // Define the model matrices used in controller
     // MatrixXd mass_matrix(7,7);
@@ -490,19 +490,20 @@ tuple<VectorXd> Controller::joint_impedance_controller(Dynamics &robot, VectorXd
 
 
     // Control input
+    // u = mass_matrix * ddq_d + coriolis_matrix * dq + gravity_matrix + K_joint * e_q + D_joint * e_dq;
     u = mass_matrix * ddq_d + coriolis_matrix * dq + gravity_matrix + K_joint * e_q + D_joint * e_dq;
     // u = gravity + K_diag * eq + K_I * integral error (in position)
 
     // Add friction compensation (// remove for KI)
-    // friction_compensation(u, dq);
+    friction_compensation(u, dq);
 
     // Set the torque saturation
     for (int i = 0; i < 7; i++)
     {
-        if(u[i] > gen3_JointTorquesLimits[i]){
-            u[i] = gen3_JointTorquesLimits[i];
-        }else if(u[i] < -gen3_JointTorquesLimits[i]){
-            u[i] = -gen3_JointTorquesLimits[i];
+        if(u[i] > 0.9*gen3_JointTorquesLimits[i]){
+            u[i] = 0.9* gen3_JointTorquesLimits[i];
+        }else if(u[i] < -0.9*gen3_JointTorquesLimits[i]){
+            u[i] = -0.9*gen3_JointTorquesLimits[i];
         }
     }
 

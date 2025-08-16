@@ -6,6 +6,7 @@
 !TrajectoryGeneration/
 !TrajectoryExecution/
 !ViconDataStream/
+!logs/
 
 # Include all .cpp files in root
 !*.cpp
