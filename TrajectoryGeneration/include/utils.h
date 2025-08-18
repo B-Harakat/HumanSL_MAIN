@@ -98,26 +98,6 @@ struct JointTrajectory {
     std::deque<Eigen::VectorXd> pos;
     std::deque<Eigen::VectorXd> vel;
     std::deque<Eigen::VectorXd> acc;
-    
-    std::function<std::tuple<Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd>()> pop_front = 
-        [this]() -> std::tuple<Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd> {
- 
-            // Get the first elements
-            auto result = std::make_tuple(
-                std::move(this->pos.front()),
-                std::move(this->vel.front()),
-                std::move(this->acc.front())
-            );
-            
-            // Always remove the first elements except when there's only 1 left
-            if (this->pos.size() > 1 && this->vel.size() > 1 && this->acc.size() > 1) {
-                this->pos.pop_front();
-                this->vel.pop_front();
-                this->acc.pop_front();
-            }
-            
-            return result;
-        };
 };
 
 
@@ -125,34 +105,6 @@ struct TaskTrajectory {
     std::deque<Eigen::VectorXd> pos;
     std::deque<Eigen::VectorXd> vel;
     std::deque<Eigen::VectorXd> acc;
-    
-    std::function<std::tuple<Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd>()> pop_front = 
-        [this]() -> std::tuple<Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd> {
-            if (this->pos.empty() || this->vel.empty() || this->acc.empty()) {
-                throw std::runtime_error("JointTrajectory is empty");
-            }
-            
-            // Get the first elements
-            Eigen::VectorXd first_pos = this->pos.front();
-            Eigen::VectorXd first_vel = this->vel.front();
-            Eigen::VectorXd first_acc = this->acc.front();
-            
-            // Always remove the first elements except when there's only 1 left
-            if (this->pos.size() > 1 && this->vel.size() > 1 && this->acc.size() > 1) {
-                this->pos.pop_front();
-                this->vel.pop_front();
-                this->acc.pop_front();
-            }
-            
-            return std::make_tuple(first_pos, first_vel, first_acc);
-        };
-};
-
-
-struct JointTrajectoryBufferStruct{
-    Eigen::VectorXd pos;
-    Eigen::VectorXd vel;
-    Eigen::VectorXd acc;
 };
 
 
@@ -196,10 +148,17 @@ std::pair<gtsam::Pose3, gtsam::Pose3> createArmBasePoses(const gtsam::Point3& cl
 std::deque<Eigen::VectorXd> convertToDeg(const std::vector<gtsam::Vector>& gtsam_trajectory);
 
 std::deque<Eigen::VectorXd> computeAcceleration(
-    const std::vector<Eigen::VectorXd>& velocity, 
+    const std::deque<Eigen::VectorXd>& velocity, 
     double dt);
 
-JointTrajectory convertTrajectory(const TrajectoryResult& result, double dt);
+template<typename T>
+T convertTrajectory(const TrajectoryResult& result, double dt){
+    T trajectory;
+    trajectory.pos = convertToDeg(result.trajectory_pos);
+    trajectory.vel = convertToDeg(result.trajectory_vel);
+    trajectory.acc = computeAcceleration(trajectory.vel,dt);
+    return trajectory;
+}
 
 void analyzeTrajectoryResults(
     const gpmp2::ArmModel& arm_model,

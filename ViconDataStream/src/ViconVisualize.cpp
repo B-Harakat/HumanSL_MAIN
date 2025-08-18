@@ -1,121 +1,121 @@
-#include "ViconVisualize.h"
-#include <chrono>
-#include <thread>
-#include <mutex>
-#include <shared_mutex>
-#include "GenerateArmModel.h"
+// #include "ViconVisualize.h"
+// #include <chrono>
+// #include <thread>
+// #include <mutex>
+// #include <shared_mutex>
+// #include "GenerateArmModel.h"
 // #include <pcl/visualization/cloud_viewer.h>
 // #include <pcl/point_types.h>
 // #include <pcl/point_cloud.h>
 
-void visualizeStaticConfiguration(
-    const Eigen::VectorXd& joint_angles,
-    const gpmp2::ArmModel& arm_model,
-    const GPMP2_OccupancyGrid& dataset,
-    const gtsam::Pose3& base_pose) {
+// void visualizeStaticConfiguration(
+//     const Eigen::VectorXd& joint_angles,
+//     const gpmp2::ArmModel& arm_model,
+//     const GPMP2_OccupancyGrid& dataset,
+//     const gtsam::Pose3& base_pose) {
     
-    std::cout << "Creating static arm visualization with Open3D..." << std::endl;
-    std::cout << "Configuration dimensions: " << joint_angles.size() << std::endl;
-    std::cout << "Arm spheres: " << arm_model.nr_body_spheres() << std::endl;
+//     std::cout << "Creating static arm visualization with Open3D..." << std::endl;
+//     std::cout << "Configuration dimensions: " << joint_angles.size() << std::endl;
+//     std::cout << "Arm spheres: " << arm_model.nr_body_spheres() << std::endl;
     
-    // Convert Eigen::VectorXd to gtsam::Vector
-    gtsam::Vector configuration(joint_angles.size());
-    for (int i = 0; i < joint_angles.size(); ++i) {
-        configuration(i) = joint_angles(i)*(M_PI/180.0);
-    }
+//     // Convert Eigen::VectorXd to gtsam::Vector
+//     gtsam::Vector configuration(joint_angles.size());
+//     for (int i = 0; i < joint_angles.size(); ++i) {
+//         configuration(i) = joint_angles(i)*(M_PI/180.0);
+//     }
     
-    // Compute forward kinematics to get sphere positions
-    gtsam::Matrix sphere_centers = arm_model.sphereCentersMat(configuration);
+//     // Compute forward kinematics to get sphere positions
+//     gtsam::Matrix sphere_centers = arm_model.sphereCentersMat(configuration);
     
-    // Get end-effector pose using forward kinematics
-    std::vector<gtsam::Pose3> joint_poses;
-    arm_model.fk_model().forwardKinematics(configuration, {}, joint_poses);
-    gtsam::Pose3 ee_pose = joint_poses.back();
+//     // Get end-effector pose using forward kinematics
+//     std::vector<gtsam::Pose3> joint_poses;
+//     arm_model.fk_model().forwardKinematics(configuration, {}, joint_poses);
+//     gtsam::Pose3 ee_pose = joint_poses.back();
     
-    // Get base position
-    gtsam::Point3 base_position = base_pose.translation();
-    gtsam::Matrix3 base_rotation = base_pose.rotation().matrix();
+//     // Get base position
+//     gtsam::Point3 base_position = base_pose.translation();
+//     gtsam::Matrix3 base_rotation = base_pose.rotation().matrix();
     
-    // Get end-effector position and rotation
-    gtsam::Point3 ee_position = ee_pose.translation();
-    gtsam::Matrix3 ee_rotation = ee_pose.rotation().matrix();
+//     // Get end-effector position and rotation
+//     gtsam::Point3 ee_position = ee_pose.translation();
+//     gtsam::Matrix3 ee_rotation = ee_pose.rotation().matrix();
     
-    // Create geometries to visualize
-    std::vector<std::shared_ptr<const open3d::geometry::Geometry>> geometries;
+//     // Create geometries to visualize
+//     std::vector<std::shared_ptr<const open3d::geometry::Geometry>> geometries;
     
-    // Create occupancy grid visualization
-    auto occupied_mesh = std::make_shared<open3d::geometry::TriangleMesh>();
-    size_t occupied_count = 0;
+//     // Create occupancy grid visualization
+//     auto occupied_mesh = std::make_shared<open3d::geometry::TriangleMesh>();
+//     size_t occupied_count = 0;
     
-    for (size_t i = 0; i < dataset.rows; ++i) {
-        for (size_t j = 0; j < dataset.cols; ++j) {
-            for (size_t k = 0; k < dataset.z; ++k) {
-                if (dataset.map[i][j][k] > 0.5f) {
-                    double world_x = dataset.origin_x + (i + 0.5) * dataset.cell_size;
-                    double world_y = dataset.origin_y + (j + 0.5) * dataset.cell_size;
-                    double world_z = dataset.origin_z + (k + 0.5) * dataset.cell_size;
+//     for (size_t i = 0; i < dataset.rows; ++i) {
+//         for (size_t j = 0; j < dataset.cols; ++j) {
+//             for (size_t k = 0; k < dataset.z; ++k) {
+//                 if (dataset.map[i][j][k] > 0.5f) {
+//                     double world_x = dataset.origin_x + (i + 0.5) * dataset.cell_size;
+//                     double world_y = dataset.origin_y + (j + 0.5) * dataset.cell_size;
+//                     double world_z = dataset.origin_z + (k + 0.5) * dataset.cell_size;
                     
-                    // Create cube mesh for each occupied cell
-                    auto cube = open3d::geometry::TriangleMesh::CreateBox(
-                        dataset.cell_size, dataset.cell_size, dataset.cell_size);
-                    cube->Translate(Eigen::Vector3d(world_x - dataset.cell_size/2, 
-                                                   world_y - dataset.cell_size/2, 
-                                                   world_z - dataset.cell_size/2));
-                    cube->PaintUniformColor(Eigen::Vector3d(1.0, 0.2, 0.2)); // Red color
+//                     // Create cube mesh for each occupied cell
+//                     auto cube = open3d::geometry::TriangleMesh::CreateBox(
+//                         dataset.cell_size, dataset.cell_size, dataset.cell_size);
+//                     cube->Translate(Eigen::Vector3d(world_x - dataset.cell_size/2, 
+//                                                    world_y - dataset.cell_size/2, 
+//                                                    world_z - dataset.cell_size/2));
+//                     cube->PaintUniformColor(Eigen::Vector3d(1.0, 0.2, 0.2)); // Red color
                     
-                    *occupied_mesh += *cube;
-                    occupied_count++;
-                }
-            }
-        }
-    }
+//                     *occupied_mesh += *cube;
+//                     occupied_count++;
+//                 }
+//             }
+//         }
+//     }
     
-    if (occupied_count > 0) {
-        geometries.push_back(occupied_mesh);
-    }
+//     if (occupied_count > 0) {
+//         geometries.push_back(occupied_mesh);
+//     }
     
-    // Create arm spheres
-    for (size_t j = 0; j < arm_model.nr_body_spheres(); ++j) {
-        auto sphere = open3d::geometry::TriangleMesh::CreateSphere(arm_model.sphere_radius(j));
-        sphere->Translate(Eigen::Vector3d(sphere_centers(0, j), 
-                                         sphere_centers(1, j), 
-                                         sphere_centers(2, j)));
-        sphere->PaintUniformColor(Eigen::Vector3d(0.2, 1.0, 0.2)); // Green color
-        geometries.push_back(sphere);
-    }
+//     // Create arm spheres
+//     for (size_t j = 0; j < arm_model.nr_body_spheres(); ++j) {
+//         auto sphere = open3d::geometry::TriangleMesh::CreateSphere(arm_model.sphere_radius(j));
+//         sphere->Translate(Eigen::Vector3d(sphere_centers(0, j), 
+//                                          sphere_centers(1, j), 
+//                                          sphere_centers(2, j)));
+//         sphere->PaintUniformColor(Eigen::Vector3d(0.2, 1.0, 0.2)); // Green color
+//         geometries.push_back(sphere);
+//     }
     
-    // Create coordinate frames
+//     // Create coordinate frames
     
-    // World origin frame
-    auto world_frame = open3d::geometry::TriangleMesh::CreateCoordinateFrame(0.3);
-    geometries.push_back(world_frame);
+//     // World origin frame
+//     auto world_frame = open3d::geometry::TriangleMesh::CreateCoordinateFrame(0.3);
+//     geometries.push_back(world_frame);
     
-    // Robot base frame
-    auto base_frame = open3d::geometry::TriangleMesh::CreateCoordinateFrame(0.25);
-    Eigen::Matrix4d base_transform = Eigen::Matrix4d::Identity();
-    base_transform.block<3,3>(0,0) = base_rotation;
-    base_transform.block<3,1>(0,3) = Eigen::Vector3d(base_position.x(), base_position.y(), base_position.z());
-    base_frame->Transform(base_transform);
-    geometries.push_back(base_frame);
+//     // Robot base frame
+//     auto base_frame = open3d::geometry::TriangleMesh::CreateCoordinateFrame(0.25);
+//     Eigen::Matrix4d base_transform = Eigen::Matrix4d::Identity();
+//     base_transform.block<3,3>(0,0) = base_rotation;
+//     base_transform.block<3,1>(0,3) = Eigen::Vector3d(base_position.x(), base_position.y(), base_position.z());
+//     base_frame->Transform(base_transform);
+//     geometries.push_back(base_frame);
     
-    // End-effector frame
-    auto ee_frame = open3d::geometry::TriangleMesh::CreateCoordinateFrame(0.15);
-    Eigen::Matrix4d ee_transform = Eigen::Matrix4d::Identity();
-    ee_transform.block<3,3>(0,0) = ee_rotation;
-    ee_transform.block<3,1>(0,3) = Eigen::Vector3d(ee_position.x(), ee_position.y(), ee_position.z());
-    ee_frame->Transform(ee_transform);
-    geometries.push_back(ee_frame);
+//     // End-effector frame
+//     auto ee_frame = open3d::geometry::TriangleMesh::CreateCoordinateFrame(0.15);
+//     Eigen::Matrix4d ee_transform = Eigen::Matrix4d::Identity();
+//     ee_transform.block<3,3>(0,0) = ee_rotation;
+//     ee_transform.block<3,1>(0,3) = Eigen::Vector3d(ee_position.x(), ee_position.y(), ee_position.z());
+//     ee_frame->Transform(ee_transform);
+//     geometries.push_back(ee_frame);
     
-    std::cout << "Visualization created successfully!" << std::endl;
-    std::cout << "- Occupied cells: " << occupied_count << std::endl;
-    std::cout << "- Arm spheres: " << arm_model.nr_body_spheres() << std::endl;
-    std::cout << "Opening Open3D visualizer..." << std::endl;
+//     std::cout << "Visualization created successfully!" << std::endl;
+//     std::cout << "- Occupied cells: " << occupied_count << std::endl;
+//     std::cout << "- Arm spheres: " << arm_model.nr_body_spheres() << std::endl;
+//     std::cout << "Opening Open3D visualizer..." << std::endl;
     
-    // Visualize using Open3D
-    open3d::visualization::DrawGeometries(geometries, 
-                                         "Static Arm Configuration", 
-                                         1600, 900);
-}
+//     // Visualize using Open3D
+//     open3d::visualization::DrawGeometries(geometries, 
+//                                          "Static Arm Configuration", 
+//                                          1600, 900);
+// }
 
 // void visualizeRealtime(
 //     const std::vector<double>& left_arm_angles,

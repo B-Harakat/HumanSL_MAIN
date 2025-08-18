@@ -8,6 +8,63 @@ using namespace Fwd_kinematics;
 using namespace Controller;
 using namespace Filter;
 
+constexpr auto TIMEOUT_PROMISE_DURATION = chrono::seconds{20};
+
+std::function<void(k_api::Base::ActionNotification)>
+create_event_listener_by_promise(promise<k_api::Base::ActionEvent>& finish_promise)
+{
+    return [&finish_promise] (k_api::Base::ActionNotification notification)
+    {
+        const auto action_event = notification.action_event();
+        switch(action_event)
+        {
+            case k_api::Base::ActionEvent::ACTION_END:
+            case k_api::Base::ActionEvent::ACTION_ABORT:
+                finish_promise.set_value(action_event);
+                break;
+            default:
+                break;
+        }
+    };
+}
+
+void move_single_level(k_api::Base::BaseClient* base, std::vector<double> q_d)
+{
+
+    auto action = k_api::Base::Action();
+
+    auto reach_joint_angles = action.mutable_reach_joint_angles();
+    auto joint_angles = reach_joint_angles->mutable_joint_angles();
+
+    auto actuator_count = base->GetActuatorCount();
+
+    // Arm straight up
+    for (size_t i = 0; i < actuator_count.count(); ++i)
+    {
+        auto joint_angle = joint_angles->add_joint_angles();
+        joint_angle->set_joint_identifier(i);
+        joint_angle->set_value(q_d[i]);
+    }
+
+    promise<k_api::Base::ActionEvent> finish_promise;
+    auto finish_future = finish_promise.get_future();
+    auto promise_notification_handle = base->OnNotificationActionTopic(
+            create_event_listener_by_promise(finish_promise),
+            k_api::Common::NotificationOptions()
+    );
+
+    base->ExecuteAction(action);
+
+    const auto status = finish_future.wait_for(TIMEOUT_PROMISE_DURATION);
+    base->Unsubscribe(promise_notification_handle);
+
+    if(status != future_status::ready)
+    {
+        cout << "Timeout on action notification wait" << endl;
+    }
+    const auto promise_event = finish_future.get();
+}
+
 bool joint_position_control_single(k_api::Base::BaseClient* base,
                             k_api::BaseCyclic::BaseCyclicClient* base_cyclic,
                             k_api::BaseCyclic::Feedback& base_feedback, 
@@ -93,7 +150,7 @@ bool joint_impedance_control_single(k_api::Base::BaseClient* base, k_api::BaseCy
         q = q_cur * (M_PI/180);
         
         // Joint space impedance controller
-        std::tie(u) = joint_impedance_controller(robot, q, dq, ddq, q_d, dq_d, ddq_d, 
+        u = joint_impedance_controller(robot, q, dq, ddq, q_d, dq_d, ddq_d, 
                                         K_joint_diag, control_frequency, dt);
 
         // Prepare command
@@ -236,22 +293,22 @@ void joint_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::B
             }
         }
                
-        // Original trajectory completion logic
-        size_t trajectory_size = trajectory.pos.size();
+        // // Original trajectory completion logic
+        // size_t trajectory_size = trajectory.pos.size();
         
-        if(trajectory_size == 1){
-            local_counter += 1;
-            // std::cout << local_counter << "\n";
-        }
-        else{
-            local_counter = 0;
-        }
+        // if(trajectory_size == 1){
+        //     local_counter += 1;
+        //     // std::cout << local_counter << "\n";
+        // }
+        // else{
+        //     local_counter = 0;
+        // }
 
-        if(local_counter >= 1000){
-            flag.store(false);
-            local_counter = 0;
-            break;
-        }
+        // if(local_counter >= 1000){
+        //     flag.store(false);
+        //     local_counter = 0;
+        //     break;
+        // }
 
         auto end_control = chrono::high_resolution_clock::now();
         auto run_time = chrono::duration<double, milli>(end_control - start_control).count();
@@ -460,7 +517,6 @@ bool task_impedance_control_single(k_api::Base::BaseClient* base, k_api::BaseCyc
     }
 }
 
-
 void task_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::BaseCyclicClient* base_cyclic, 
                                 k_api::ActuatorConfig::ActuatorConfigClient* actuator_config, k_api::BaseCyclic::Feedback& base_feedback, k_api::BaseCyclic::Command& base_command, Dynamics &robot,
                                 TaskTrajectory& trajectory, gtsam::Pose3& base_frame, int control_frequency, std::string& dh_parameters_path,
@@ -517,6 +573,165 @@ void task_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::Ba
         }
     }
 }
+
+bool chicken_head_control_single(k_api::Base::BaseClient* base, k_api::BaseCyclic::BaseCyclicClient* base_cyclic,
+                       k_api::ActuatorConfig::ActuatorConfigClient* actuator_config, k_api::BaseCyclic::Feedback& base_feedback, k_api::BaseCyclic::Command& base_command, Dynamics &robot,
+                       VectorXd& p_d, VectorXd& K_d_diag, int control_frequency, bool& first_call, std::chrono::time_point<std::chrono::high_resolution_clock>& start_measure, DHParameters_Eigen& dh_eigen) {
+    
+    // KINOVA feedback (joint space variables)
+    VectorXd q(7), dq(7), ddq(7);
+
+    // Task space variables
+    VectorXd u(7), p(6), dp(6), ddp(6);
+    MatrixXd T_B7(4,4);  // Rotation matrix
+
+    // Time for one control iterative
+    double dt = 1.0 / control_frequency;
+
+ 
+    base_feedback = base_cyclic->RefreshFeedback();
+
+    // KINOVA Feedback: Obtaining gen3 ACTUAL joint positions, velocities, torques & current
+    for (int i = 0; i < 7; i++) {
+      q[i] = base_feedback.actuators(i).position();  
+      dq[i] = base_feedback.actuators(i).velocity();
+    }
+
+    shiftAngleInPlace(q);  // Apply angle wrapping in degrees
+
+
+    for (int i = 0; i < 7; i++) {
+        q[i] = (M_PI/180) * q[i];   // Convert to radians
+        dq[i] = (M_PI/180) * dq[i]; // Convert to radians
+    }
+
+    // Apply the forward kinematics
+    std::tie(p, T_B7) = forward(dh_eigen,q);
+
+    // std::cout << "p_d relative to base_frame: ";
+    // for(auto& k : p_d){std::cout<< k <<", ";}
+    // std::cout << "\n";
+
+    // std::cout << "fwd measured pose: ";
+    // for(auto& k : p){std::cout<< k <<", ";}
+    // std::cout << "\n";
+
+    // std::cout << "Blocked ...";
+    // std::cin.get();
+
+
+    auto end_measure = chrono::high_resolution_clock::now();
+    
+    if (first_call == true){
+        dt = 1.0 / control_frequency;
+        first_call = false;
+    }
+    else{
+        chrono::duration<double> measure_dur = end_measure - start_measure;
+        dt = measure_dur.count();
+    }
+
+    start_measure = chrono::high_resolution_clock::now();
+
+    // Impedance controller
+    u = chicken_head_controller(robot, q, dq, T_B7, p_d, K_d_diag, dt);
+
+    for (int i = 0; i < 7; i++)
+    {
+        // -- Position
+        base_command.mutable_actuators(i)->set_position(base_feedback.actuators(i).position());
+        // -- Torque
+        base_command.mutable_actuators(i)->set_torque_joint(u[i]);
+    }
+
+    // Incrementing identifier ensures actuators can reject out of time frames
+    base_command.set_frame_id(base_command.frame_id() + 1);
+    if (base_command.frame_id() > 65535)
+        base_command.set_frame_id(0);
+
+    for (int idx = 0; idx < 7; idx++)
+    {
+        base_command.mutable_actuators(idx)->set_command_id(base_command.frame_id());
+    }
+  
+    try
+    {
+        base_feedback = base_cyclic->Refresh(base_command, 0);
+
+        return true;
+    }
+    catch (k_api::KDetailedException& ex)
+    {
+        std::cout << "Kortex exception: " << ex.what() << std::endl;
+        std::cout << "Error sub-code: " << k_api::SubErrorCodes_Name(k_api::SubErrorCodes((ex.getErrorInfo().getError().error_sub_code()))) << std::endl;
+        return false;
+    }
+    catch (runtime_error& ex2)
+    {
+        std::cout << "runtime error: " << ex2.what() << std::endl;
+        return false;
+    }
+    catch(...)
+    {
+        std::cout << "Unknown error." << std::endl;
+        return false;
+    }
+}
+
+void chicken_head_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::BaseCyclicClient* base_cyclic, 
+                                k_api::ActuatorConfig::ActuatorConfigClient* actuator_config, k_api::BaseCyclic::Feedback& base_feedback, k_api::BaseCyclic::Command& base_command, Dynamics &robot,
+                                Eigen::VectorXd& p_d_world, gtsam::Pose3& base_frame, int control_frequency, std::string& dh_parameters_path,
+                                std::shared_mutex& vicon_data_mutex, std::atomic<bool>& flag){
+    
+    static thread_local int counter = 0;
+    auto start_measure = chrono::high_resolution_clock::now();
+
+    Eigen::VectorXd K_d_diag(6);
+    K_d_diag << 1000, 1000, 1000, 100, 100, 100;
+
+    DHParameters_Eigen dh_eigen = createDHParamsEigen(dh_parameters_path);
+
+    Eigen::VectorXd dp_d_world(6); Eigen::VectorXd ddp_d_world(6);
+    dp_d_world << 0,0,0,0,0,0;
+    ddp_d_world << 0,0,0,0,0,0;
+
+    bool first_call = true;
+
+    gtsam::Pose3 base_frame_snapshot;
+
+    while(flag){
+
+        auto start_control = chrono::high_resolution_clock::now();
+        
+        // Transform poses from world_frame to base_frame
+        {
+            std::shared_lock<std::shared_mutex> vicon_lock(vicon_data_mutex);
+            base_frame_snapshot = base_frame;
+        }
+        
+        auto[p_d, dp_d, ddp_d] = world2base(p_d_world, dp_d_world, ddp_d_world, base_frame_snapshot);
+        const double iteration_time = (1.0 / control_frequency) * 1000;
+
+        robot.setBaseOrientation(base_frame_snapshot.rotation().matrix());
+        
+        if(!chicken_head_control_single(base, base_cyclic, actuator_config, base_feedback, base_command, robot, p_d, K_d_diag, control_frequency, first_call, start_measure, dh_eigen)){
+            throw std::runtime_error("ERROR: task_impedance_control_single");
+        }
+
+        auto end_control = chrono::high_resolution_clock::now();
+        auto run_time = chrono::duration<double, milli>(end_control - start_control).count();
+        int diff = 0;
+        if (run_time < iteration_time) {
+            auto start_delay = chrono::high_resolution_clock::now();
+            diff = (iteration_time - run_time) * 1000;
+            chrono::microseconds delay(diff);
+            while (chrono::high_resolution_clock::now() - start_delay < delay);
+        }
+    }
+}
+
+
+
 
 void updateJointInfo(  k_api::BaseCyclic::BaseCyclicClient* base_cyclic,
                        std::vector<double>& q_cur, 

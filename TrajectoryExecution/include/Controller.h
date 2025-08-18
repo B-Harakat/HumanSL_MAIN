@@ -28,10 +28,15 @@ namespace Controller {
                                                              int c_f, double& time_period);
     void ini_controller(Vector3d& pos, MatrixXd& T_B7);
 
-    tuple<VectorXd> joint_impedance_controller(Dynamics &robot, VectorXd& q, VectorXd& dq, VectorXd& ddq,
+    VectorXd joint_impedance_controller(Dynamics &robot, VectorXd& q, VectorXd& dq, VectorXd& ddq,
                                                       VectorXd& q_d, VectorXd& dq_d, VectorXd& ddq_d,
                                                       VectorXd& K_joint_diag, 
                                                       int c_f, double& time_period);
+
+    VectorXd chicken_head_controller(Dynamics& robot, 
+                              VectorXd& q, VectorXd& dq, MatrixXd& T_B7,
+                              VectorXd& p_d, VectorXd& K_d_diag, 
+                              double dt);
 }
 
 

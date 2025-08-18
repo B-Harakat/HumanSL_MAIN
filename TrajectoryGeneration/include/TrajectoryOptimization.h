@@ -43,7 +43,20 @@ public:
         const JointLimits& vel_limits,
         const size_t total_time_step,
         const double total_time_sec,
-        const double dt = 0.001
+        const double target_dt = 0.001
+    );
+
+    TrajectoryResult optimizeTaskTrajectory(
+        const gpmp2::ArmModel& arm_model,
+        const gpmp2::SignedDistanceField& sdf,
+        const gtsam::Values& init_values,
+        const std::deque<gtsam::Pose3>& pose_trajectory,
+        const gtsam::Vector& start_config,
+        const JointLimits& pos_limits,
+        const JointLimits& vel_limits,
+        const size_t total_time_step,
+        const double total_time_sec,
+        const double target_dt = 0.001
     );
 
     TrajectoryResult reOptimizeJointTrajectory(
@@ -57,7 +70,7 @@ public:
         const JointLimits& vel_limits,
         const size_t total_time_step,
         const double total_time_sec,
-        const double dt = 0.001
+        const double target_dt = 0.001
     );
 
 

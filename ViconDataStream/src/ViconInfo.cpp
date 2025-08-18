@@ -119,8 +119,27 @@ void updateHumanInfo(HumanInfo& human_info, std::vector<MarkerData>& human){
     human_info.bounds = HumanBoundingBox{min_x, max_x, min_y, max_y, min_z, max_z};
 }
 
+void updateTargetInfo(gtsam::Point3& target_info, std::vector<MarkerData>& target){
 
-void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose3& right_base, TubeInfo& tube_info, HumanInfo& human_info, std::vector<double>& left_conf, std::vector<double>& right_conf, std::string& dh_params_path, std::shared_mutex& vicon_data_mutex, std::shared_mutex& joint_data_mutex){
+    double x_total = 0.0;
+    double y_total = 0.0;
+    double z_total = 0.0;
+
+    for(auto marker : target){
+        x_total += marker.x/1000;
+        y_total += marker.y/1000;
+        z_total += marker.z/1000;
+    }
+
+    x_total = x_total / target.size();
+    y_total = y_total / target.size();
+    z_total = z_total / target.size();
+
+    target_info = gtsam::Point3(x_total, y_total, z_total);
+}
+
+
+void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose3& right_base, TubeInfo& tube_info, HumanInfo& human_info, gtsam::Point3& target_info, std::vector<double>& left_conf, std::vector<double>& right_conf, std::string& dh_params_path, std::shared_mutex& vicon_data_mutex, std::shared_mutex& joint_data_mutex){
     
  
     std::unique_lock<std::shared_mutex> vicon_lock(vicon_data_mutex);
@@ -142,9 +161,13 @@ void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose
 
     std::vector<MarkerData> tube  = vicon.getMarkerPositions("tube");
     std::vector<MarkerData> human = vicon.getMarkerPositions("human");
+    std::vector<MarkerData> target= vicon.getMarkerPositions("target");
 
     updateTubeInfo(tube_info, tube);
     updateHumanInfo(human_info, human);
+    updateTargetInfo(target_info, target);
+
+
 
     // Check for occlusion in right_base_data
 

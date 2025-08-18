@@ -282,7 +282,7 @@ gtsam::Values InitializeTrajectory::initJointTrajectoryFromVicon(
                                 double offset_from_tube_z,
                                 const gtsam::Pose3& base_pose,
                                 const size_t total_time_step,
-                                gtsam::Pose3& best_end_pose) {
+                                gtsam::Pose3& best_end_pose, bool tune_pose) {
     
     std::vector<gtsam::Vector> end_confs;
     int best_idx = -1;
@@ -311,9 +311,11 @@ gtsam::Values InitializeTrajectory::initJointTrajectoryFromVicon(
 
     for(int j =0; j < 4; j++){
 
-        double y_compensation;
-        if(j == 0) y_compensation = 0.0;
-        else y_compensation = (rand() % 21) / 100.0;
+        double y_compensation = 0.0;
+        if(tune_pose){
+            if(j == 0) y_compensation = 0.0;
+            else y_compensation = (rand() % 21) / 100.0;
+        }
 
         // Calculate modified tube point
         Eigen::Vector3d compensated_tube_point = tube_point;
@@ -328,14 +330,18 @@ gtsam::Values InitializeTrajectory::initJointTrajectoryFromVicon(
                 std::cout << "    || 0   6  12  18  24  30\n";
         }
 
-        printf("%.2f", y_compensation);
+        printf("%.3f", y_compensation);
         std::cout << "||";
         
         // Orientation sweep: 0° to 45° around tube axis (steps 10°)  
         // for(int angle_deg = 0; angle_deg <= 30; angle_deg += 6) {
         for (int i = 0; i < 5; i++){
-            double angle_deg = (rand() % 41);
-    
+            double angle_deg = 0.0;
+
+            if(tune_pose){
+                angle_deg = (rand() % 41);
+            }
+            
             double angle_rad = angle_deg * M_PI / 180.0;
             
             ee_position.z() = compensated_tube_point.z() - cos(angle_rad) * offset_from_tube_z;
@@ -418,170 +424,6 @@ gtsam::Values InitializeTrajectory::initJointTrajectoryFromVicon(
             // std::cout << "\ninitial confs, i = " << i << ": ";
             // for(auto& k : conf){ std::cout << k << ", ";}
             // std::cout << "\n";
-
-            init_values.insert(gtsam::Symbol('x', i), conf);
-        }
-        // init vel as avg vel
-        gtsam::Vector avg_vel = (end_confs[best_idx] - start_conf) / static_cast<double>(total_time_step);
-        for (size_t i = 0; i <= total_time_step; i++)
-            init_values.insert(gtsam::Symbol('v', i), avg_vel);
-
-        return init_values;
-    } else {
-        throw std::runtime_error("Failed to solve IK for any target pose with tube orientations");
-    }
-}
-
-
-gtsam::Values InitializeTrajectory::initJointTrajectoryFromViconShaky(
-                                const gtsam::Vector& start_conf,
-                                const TubeInfo& tube_info,
-                                const HumanInfo& human_info,
-                                double offset_from_human_y,
-                                double offset_from_tube_z,
-                                const gtsam::Pose3& base_pose,
-                                const size_t total_time_step,
-                                gtsam::Pose3& best_end_pose) {
-    
-    // Random number generator for perturbations
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    static std::uniform_real_distribution<double> dis(-0.5, 0.5);
-    
-    std::vector<gtsam::Vector> end_confs;
-    int best_idx = -1;
-    double best_quality = 1e20;
-
-    // Calculate target y position  
-    double target_y = human_info.bounds.max_y + offset_from_human_y;
-
-    std::cout << "Human info max y: " << human_info.bounds.max_y << "\n";
-    std::cout << "Human info min y: " << human_info.bounds.min_y << "\n";
-    
-    // Find point on tube axis where y = target_y
-    double t = (target_y - tube_info.centroid.y()) / tube_info.direction.y();
-    Eigen::Vector3d tube_point = tube_info.centroid + t * tube_info.direction;
-    
-    // Base position for orientation calculations
-    gtsam::Point3 base_point = base_pose.translation();
-    Eigen::Vector3d base_pos(base_point.x(), base_point.y(), base_point.z());
-    
-    gtsam::Pose3 start_pose = forwardKinematics(dh_params_, start_conf, base_pose);
-    gtsam::Point3 start_point = start_pose.translation();
-    Eigen::Vector3d start_pos(start_point.x(), start_point.y(), start_point.z());
-    
-    // Position sweep: y-axis variation (-0.1 to +0.3, steps 0.02) 
-    for(double y_compensation = 0.0; y_compensation <= 0.2; y_compensation += 0.05) {
-
-        // if(i == 0) y_compensation = 0.0;
-        // else y_compensation = (rand() % 21) / 100.0;
-
-        // Calculate modified tube point
-        Eigen::Vector3d compensated_tube_point = tube_point;
-        compensated_tube_point.y() += y_compensation;
-        Eigen::Vector3d ee_position = compensated_tube_point;
-
-        int success_count = 0;
-        bool found_solution_for_this_position = false;
-
-        if(y_compensation == 0.0){
-                std::cout << "=====================\n";
-                std::cout << "    || 0  10  20  30 \n";
-        }
-
-        printf("%.2f", y_compensation);
-        std::cout << "||";
-        
-        // Orientation sweep: 0° to 45° around tube axis (steps 10°)  
-        for(int angle_deg = 0; angle_deg <= 30; angle_deg += 10) {
-            
-    
-            double angle_rad = angle_deg * M_PI / 180.0;
-            
-            ee_position.z() = compensated_tube_point.z() - cos(angle_rad) * offset_from_tube_z;
-
-            if ((ee_position.x() - start_pos.x()) > 0) {
-                ee_position.x() = compensated_tube_point.x() - sin(angle_rad) * offset_from_tube_z;
-            } else {
-                ee_position.x() = compensated_tube_point.x() + sin(angle_rad) * offset_from_tube_z;
-            }
-
-            // Calculate rotation axis (tube direction)
-            Eigen::Vector3d tube_axis = tube_info.direction.normalized();
-            
-            // Apply rotation - choose direction that brings EE closer to base
-            Eigen::Matrix3d rotated_orientation;
-            
-            // Ensure z-axis points toward tube axis (radially inward)
-            Eigen::Vector3d to_tube = (compensated_tube_point - ee_position).normalized();
-            rotated_orientation.col(2) = to_tube;
-            
-            // Y-axis in negative tube axis direction
-            rotated_orientation.col(1) = -tube_axis;
-            
-            // X-axis via right-hand rule: x = y × z
-            Eigen::Vector3d y_axis = -tube_axis;
-            Eigen::Vector3d x_axis = y_axis.cross(to_tube).normalized();
-            rotated_orientation.col(0) = x_axis;
-            
-            // Create target pose
-            gtsam::Rot3 target_rotation(rotated_orientation);
-            gtsam::Point3 target_position(ee_position);
-            gtsam::Pose3 target_pose(target_rotation, target_position);
-
-            // std::cout << "Y: "<< y_compensation << "Angle: " << angle_deg << "\n" << target_pose <<"\n\n";
-            
-            gtsam::Vector end_conf;
-            if(solveIK(target_pose, base_pose, start_conf, end_conf, 50, 0.25)) {
-                wrapAngles(end_conf, start_conf);
-                end_confs.push_back(end_conf);
-                
-                // Print pose information for this successful solution
-                gtsam::Point3 pos = target_pose.translation();
-                gtsam::Matrix3 rot = target_pose.rotation().matrix();
-            
-                success_count++;
-                double magnitude = (end_conf - start_conf).norm();
-
-                if(magnitude < best_quality) {
-                    best_quality = magnitude;
-                    best_idx = end_confs.size()-1;
-                    best_end_pose = target_pose;  // Store the pose that gave us the best solution
-                }
-                found_solution_for_this_position = true;
-                std::cout << " !  ";
-            } else {
-                std::cout << " .  ";
-            }
-        
-        }
-        std::cout << "\n";
-    }
-    std::cout << "=====================\n";
-    
-
-    if(end_confs.size() > 0) {
-        gtsam::Values init_values;
-
-        for (size_t i = 0; i <= total_time_step; i++) {
-            gtsam::Vector conf;
-            if (i == 0)
-                conf = start_conf;
-            else if (i == total_time_step) 
-                conf = end_confs[best_idx];
-            else
-                conf =
-                    static_cast<double>(i) / static_cast<double>(total_time_step) * end_confs[best_idx] +
-                    (1.0 - static_cast<double>(i) / static_cast<double>(total_time_step)) *
-                        start_conf;
-            
-            std::cout << "\ninitial confs, i = " << i << ": ";
-            for(auto& k : conf){ std::cout << k << ", ";}
-            std::cout << "\n";
-
-            for (int j = 0; j < conf.size(); j++) {
-                conf(j) += dis(gen);
-            }
 
             init_values.insert(gtsam::Symbol('x', i), conf);
         }
@@ -799,5 +641,130 @@ InitializeTrajectory::initTaskSpaceTrajectory(const gtsam::Pose3& start_pose,
     }
     
     return std::make_tuple(trajectory, velocity, acceleration);
+}
+
+gtsam::Values
+InitializeTrajectory::initTaskSpaceTrajectory(const gtsam::Pose3& start_pose,
+                      const gtsam::Pose3& end_pose,
+                      const gtsam::Pose3& base_pose,
+                      const gtsam::Vector& start_conf,
+                      std::deque<gtsam::Pose3>& pose_trajectory,
+                      double percentage,
+                      double height,
+                      int num_points) {
+    
+    // Handle edge case where num_points is 1 or less
+    if (num_points <= 1) {
+        throw std::invalid_argument("num_points must be bigger than 1");
+    }
+    
+    // Extract positions and orientations
+    gtsam::Vector3 start_pos = start_pose.translation();
+    gtsam::Vector3 end_pos = end_pose.translation();
+    gtsam::Vector3 start_rpy = start_pose.rotation().rpy();
+    gtsam::Vector3 end_rpy = end_pose.rotation().rpy();
+    
+    // Calculate the middle point for position spline
+    gtsam::Vector3 line_point = start_pos + percentage * (end_pos - start_pos);
+    gtsam::Vector3 middle_point = line_point;
+    middle_point.z() += height;  // Add height offset in z-direction
+    
+    // Create cubic spline coefficients for each dimension (x, y, z)
+    // Using natural cubic spline through 3 points: t = [0, 0.5, 1]
+    // Control points: [start_pos, middle_point, end_pos]
+    
+    auto computeCubicSplineCoeffs = [](double p0, double p1, double p2) -> std::array<double, 4> {
+        // For natural cubic spline through 3 points at t = [0, 0.5, 1]
+        // Solving the system with natural boundary conditions (second derivative = 0 at ends)
+        double a = p0;
+        double b = -3.0 * p0 + 4.0 * p1 - p2;
+        double c = 2.0 * p0 - 4.0 * p1 + 2.0 * p2;
+        double d = 0.0;  // Natural boundary condition
+        return {a, b, c, d};
+    };
+    
+    // Get coefficients for each dimension
+    auto coeffs_x = computeCubicSplineCoeffs(start_pos.x(), middle_point.x(), end_pos.x());
+    auto coeffs_y = computeCubicSplineCoeffs(start_pos.y(), middle_point.y(), end_pos.y());
+    auto coeffs_z = computeCubicSplineCoeffs(start_pos.z(), middle_point.z(), end_pos.z());
+    
+    // Helper functions for angular interpolation
+    auto normalizeAngle = [](double angle) {
+        while (angle > M_PI) angle -= 2.0 * M_PI;
+        while (angle < -M_PI) angle += 2.0 * M_PI;
+        return angle;
+    };
+    
+    auto angularDifference = [&normalizeAngle](double end_angle, double start_angle) {
+        return normalizeAngle(end_angle - start_angle);
+    };
+    
+    // Pre-compute angular differences for RPY (handles wrapping)
+    double roll_diff = angularDifference(end_rpy.x(), start_rpy.x());
+    double pitch_diff = angularDifference(end_rpy.y(), start_rpy.y());
+    double yaw_diff = angularDifference(end_rpy.z(), start_rpy.z());
+    
+    // Generate interpolated trajectory
+    for (int i = 0; i <= num_points; ++i) {
+        double t = static_cast<double>(i) / (num_points);  // Parameter from 0 to 1
+        
+        // Calculate position using cubic spline
+        gtsam::Vector3 position;
+        if (i == 0) {
+            position.x() = coeffs_x[0]; // t=0, so only the constant term
+            position.y() = coeffs_y[0];
+            position.z() = coeffs_z[0];
+        } else {
+            // Cubic spline interpolation for position (x, y, z)
+            position.x() = coeffs_x[0] + coeffs_x[1] * t + coeffs_x[2] * t * t + coeffs_x[3] * t * t * t;
+            position.y() = coeffs_y[0] + coeffs_y[1] * t + coeffs_y[2] * t * t + coeffs_y[3] * t * t * t;
+            position.z() = coeffs_z[0] + coeffs_z[1] * t + coeffs_z[2] * t * t + coeffs_z[3] * t * t * t;
+        }
+        
+        // Calculate orientation using linear interpolation with wrapping
+        double roll = normalizeAngle(start_rpy.x() + t * roll_diff);
+        double pitch = normalizeAngle(start_rpy.y() + t * pitch_diff);
+        double yaw = normalizeAngle(start_rpy.z() + t * yaw_diff);
+        
+        // Create rotation from RPY
+        gtsam::Rot3 rotation = gtsam::Rot3::RzRyRx(roll, pitch, yaw);
+        
+        // Create pose and add to trajectory
+        gtsam::Pose3 pose(rotation, position);
+        pose_trajectory.push_back(pose);
+    }
+
+    std::vector<gtsam::Vector> end_confs;
+    end_confs.push_back(start_conf);
+    gtsam::Vector end_conf;
+
+    for(int i = 1; i <= num_points; i++){
+        for(int j = 0; j < 4; j++){
+            if(solveIK(pose_trajectory[i], base_pose, end_confs[i-1], end_conf, 50, 0.25)) {
+                wrapAngles(end_conf, end_confs[i-1]);
+                end_confs.push_back(end_conf);
+                break;
+            }
+
+            if(j == 3){throw std::runtime_error("IK failed during task space initiation");}
+        }
+    }
+
+    
+    gtsam::Values init_values;
+
+    for (size_t i = 0; i <= num_points; i++) {
+        gtsam::Vector conf;
+       
+        conf = end_confs[i];
+
+        init_values.insert(gtsam::Symbol('x', i), conf);
+    }
+    // init vel as avg vel
+    gtsam::Vector avg_vel = gtsam::Vector::Zero(7);
+    for (size_t i = 0; i <= num_points; i++)
+        init_values.insert(gtsam::Symbol('v', i), avg_vel);
+
+    return init_values;
 }
 

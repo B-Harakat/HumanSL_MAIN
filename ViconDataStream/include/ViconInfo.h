@@ -31,7 +31,9 @@ void updateTubeInfo(TubeInfo& tube_info, std::vector<MarkerData>& tube);
 
 void updateHumanInfo(HumanInfo& human_info, std::vector<MarkerData>& human);
 
-void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose3& right_base, TubeInfo& tube_info, HumanInfo& human_info, std::vector<double>& left_conf, std::vector<double>& right_conf, std::string& dh_params_path, std::shared_mutex& vicon_data_mutex, std::shared_mutex& joint_data_mutex);
+void updateTargetInfo(gtsam::Point3& target_info, std::vector<MarkerData>& target);
+
+void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose3& right_base, TubeInfo& tube_info, HumanInfo& human_info, gtsam::Point3& target_info, std::vector<double>& left_conf, std::vector<double>& right_conf, std::string& dh_params_path, std::shared_mutex& vicon_data_mutex, std::shared_mutex& joint_data_mutex);
 
 gtsam::Pose3 updatePoseInfo1(std::vector<MarkerData>& vicon_data, std::string& dh_params_path, std::vector<double>& joint_conf);
 

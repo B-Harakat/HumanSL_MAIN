@@ -60,17 +60,8 @@ public:
                                         double offset_from_tube_z,
                                         const gtsam::Pose3& base_pose,
                                         const size_t total_time_step,
-                                        gtsam::Pose3& best_end_pose);
+                                        gtsam::Pose3& best_end_pose, bool tune_pose = true);
 
-    gtsam::Values initJointTrajectoryFromViconShaky(
-                                        const gtsam::Vector& start_conf,
-                                        const TubeInfo& tube_info,
-                                        const HumanInfo& human_info,
-                                        double offset_from_human_y,
-                                        double offset_from_tube_z,
-                                        const gtsam::Pose3& base_pose,
-                                        const size_t total_time_step,
-                                        gtsam::Pose3& best_end_pose);
     
     gtsam::Values reInitJointTrajectoryFromVicon(
                                         const std::vector<gtsam::Vector>& extracted_pos,
@@ -90,6 +81,15 @@ public:
                 const double& percentage = 0.25,
             const double& height = 0.23,
         double dt = 0.002);
+
+    gtsam::Values initTaskSpaceTrajectory(const gtsam::Pose3& start_pose,
+                                        const gtsam::Pose3& end_pose,
+                                    const gtsam::Pose3& base_pose,
+                                const gtsam::Vector& start_conf,
+                            std::deque<gtsam::Pose3>& pose_trajectory,
+                        double percentage,
+                      double height,
+                    int num_points);
 };
 
 #endif // TRAJECTORY_INITIATION_H

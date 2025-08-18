@@ -97,6 +97,15 @@ public:
                                          const gtsam::Pose3& start_pose,
                                          double offset);
 
+    gtsam::Pose3 over_head_pose(const HumanInfo& human_info,             
+                            const gtsam::Pose3& start_pose,
+                            const double& offset_from_human_max_y,
+                            const double& offset_from_human_mid_x,
+                            const double& offset_from_human_max_z);
+    
+    gtsam::Pose3 installtion_pose(const gtsam::Point3& target_info,             
+                            const gtsam::Pose3& start_pose);
+
     // Plan joint space trajectory
     void plan_joint(JointTrajectory& trajectory, 
                     std::vector<double>& current_joint_pos, 
@@ -107,7 +116,7 @@ public:
                     double offset_from_tube_z, 
                     double total_time_sec, 
                     size_t total_time_step, 
-                    int control_frequency, bool debug = false);
+                    int control_frequency, bool tune_pose = true);
     
     void plan_joint(JointTrajectory& trajectory, 
                      std::vector<double>& current_joint_pos,  
@@ -116,17 +125,6 @@ public:
                      double total_time_sec, 
                      size_t total_time_step,
                      int control_frequency = 1000);
-
-    void plan_joint_shaky(JointTrajectory& trajectory, 
-                     std::vector<double>& current_joint_pos, 
-                     const gtsam::Pose3& base_pose, 
-                     const TubeInfo& tube_info,
-                     const HumanInfo& human_info,
-                     double offset_from_human_y,
-                     double offset_from_tube_z, 
-                     double total_time_sec, 
-                     size_t total_time_step,
-                     int control_frequency);
 
     // Replan joint space trajectory starting from 200ms future state
     void replan_joint(const JointTrajectory& old_trajectory,
@@ -176,5 +174,16 @@ public:
                    const double percentage,
                    const double height,
                    const int control_frequency = 500);
+    
+    void plan_task(JointTrajectory& trajectory, 
+                    const gtsam::Pose3& start_pose,
+                    const gtsam::Pose3& end_pose,
+                    const gtsam::Pose3& base_pose,
+                    const std::vector<double>& current_joint_pos,
+                    const double total_time_sec,
+                    const int total_time_step,
+                    const double percentage,
+                    const double height,
+                    const int control_frequency);
 };
 

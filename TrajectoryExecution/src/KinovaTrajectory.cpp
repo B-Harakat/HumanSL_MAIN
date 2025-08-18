@@ -622,7 +622,7 @@ bool joint_impedance_control(k_api::Base::BaseClient* base, k_api::BaseCyclic::B
             last_dq = dq;
 
             // Joint space impedance controller
-            std::tie(u) = joint_impedance_controller(robot, q, dq, ddq, q_d[k], dq_d[k], ddq_d[k], 
+            u = joint_impedance_controller(robot, q, dq, ddq, q_d[k], dq_d[k], ddq_d[k], 
                                                K_joint_diag, CONTROL_FREQUENCY, dt);
 
             // Set the control frequency
@@ -697,7 +697,7 @@ bool joint_impedance_control(k_api::Base::BaseClient* base, k_api::BaseCyclic::B
 
             // Use final trajectory point for steady-state
             int last_idx = q_d.size()-1;
-            std::tie(u) = joint_impedance_controller(robot, q, dq, ddq, q_d[last_idx], dq_d[last_idx], ddq_d[last_idx], 
+            u = joint_impedance_controller(robot, q, dq, ddq, q_d[last_idx], dq_d[last_idx], ddq_d[last_idx], 
                                                K_joint_diag, CONTROL_FREQUENCY, dt);
 
             // Control frequency management

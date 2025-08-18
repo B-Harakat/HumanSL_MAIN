@@ -175,14 +175,6 @@ std::deque<Eigen::VectorXd> computeAcceleration(
 }
 
 
-JointTrajectory convertTrajectory(const TrajectoryResult& result, double dt){
-
-    JointTrajectory trajectory;
-    trajectory.pos = convertToDeg(result.trajectory_pos);
-    trajectory.vel = convertToDeg(result.trajectory_vel);
-    trajectory.acc = computeAcceleration(trajectory.vel,dt);
-    return trajectory;
-}
 
 void analyzeTrajectoryResults(
     const gpmp2::ArmModel& arm_model,

@@ -1,24 +1,24 @@
-#include <vector>
-#include <string>
-#include <iostream>
-#include <shared_mutex>
+// #include <vector>
+// #include <string>
+// #include <iostream>
+// #include <shared_mutex>
 
-#include <Eigen/Dense>
-#include <gtsam/geometry/Point3.h>
-#include <gtsam/geometry/Pose3.h>
-#include <gtsam/base/Vector.h>
-#include <gpmp2/kinematics/ArmModel.h>
+// #include <Eigen/Dense>
+// #include <gtsam/geometry/Point3.h>
+// #include <gtsam/geometry/Pose3.h>
+// #include <gtsam/base/Vector.h>
+// #include <gpmp2/kinematics/ArmModel.h>
 
-#include <open3d/Open3D.h>
+// #include <open3d/Open3D.h>
 
-#include "utils.h"
+// #include "utils.h"
 
 
-void visualizeStaticConfiguration(
-    const Eigen::VectorXd& joint_angles,
-    const gpmp2::ArmModel& arm_model,
-    const GPMP2_OccupancyGrid& dataset,
-    const gtsam::Pose3& base_pose);
+// void visualizeStaticConfiguration(
+//     const Eigen::VectorXd& joint_angles,
+//     const gpmp2::ArmModel& arm_model,
+//     const GPMP2_OccupancyGrid& dataset,
+//     const gtsam::Pose3& base_pose);
 
 // void visualizeRealtime(
 //     const std::vector<double>& left_arm_angles,

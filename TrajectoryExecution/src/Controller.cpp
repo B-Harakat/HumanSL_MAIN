@@ -447,7 +447,7 @@ void Controller::ini_controller(Vector3d& pos, MatrixXd& T_B7){
     last_vel = Vector<double, 6>::Zero();
 }
 
-tuple<VectorXd> Controller::joint_impedance_controller(Dynamics &robot, VectorXd& q, VectorXd& dq, VectorXd& ddq,
+VectorXd Controller::joint_impedance_controller(Dynamics &robot, VectorXd& q, VectorXd& dq, VectorXd& ddq,
                                                       VectorXd& q_d, VectorXd& dq_d, VectorXd& ddq_d,
                                                       VectorXd& K_joint_diag, 
                                                       int c_f, double& time_period){
@@ -492,6 +492,7 @@ tuple<VectorXd> Controller::joint_impedance_controller(Dynamics &robot, VectorXd
     // Control input
     // u = mass_matrix * ddq_d + coriolis_matrix * dq + gravity_matrix + K_joint * e_q + D_joint * e_dq;
     u = mass_matrix * ddq_d + coriolis_matrix * dq + gravity_matrix + K_joint * e_q + D_joint * e_dq;
+    u[6] = K_joint.diagonal()[6] * e_q[6] + D_joint.diagonal()[6] * e_dq[6];
     // u = gravity + K_diag * eq + K_I * integral error (in position)
 
     // Add friction compensation (// remove for KI)
@@ -515,5 +516,83 @@ tuple<VectorXd> Controller::joint_impedance_controller(Dynamics &robot, VectorXd
 
     std::cout << " "<< std::endl;
 
-    return make_tuple(u);
+    return u;
+}
+
+
+VectorXd Controller::chicken_head_controller(Dynamics& robot, 
+                              VectorXd& q, VectorXd& dq, MatrixXd& T_B7,
+                              VectorXd& p_d, VectorXd& K_d_diag, 
+                              double dt) {
+    
+    // Initialize outputs and variables
+    VectorXd u(7);
+    VectorXd dp(6), e(6), e_dot(6);
+    
+    // Compute stiffness and damping matrices
+    Vector<double, 6> D_d_diag = 2 * K_d_diag.array().sqrt();  // Critical damping
+    DiagonalMatrix<double, 6> D_d = D_d_diag.asDiagonal();
+    DiagonalMatrix<double, 6> K_d = K_d_diag.asDiagonal();
+    
+    // Compute robot dynamics
+    robot.computeDynamics(robot.convertJointAnglesToConfig(q), dq);
+    const auto& mass_matrix = robot.data_.M;
+    const auto& gravity_matrix = robot.data_.g;
+    const auto& coriolis_matrix = robot.data_.C;
+    
+    // Compute Jacobian and related matrices
+    static MatrixXd last_jaco(6,7);
+    
+    MatrixXd jacobian = jaco_m(q);  // 6x7 Jacobian
+    MatrixXd jacobian_dot = (jacobian - last_jaco) / dt;
+    last_jaco = jacobian;
+    
+    MatrixXd pinv_jacobian = jacobian.completeOrthogonalDecomposition().pseudoInverse();
+    MatrixXd jacobian_T = jacobian.transpose();
+    MatrixXd pinv_jacobian_T = pinv_jacobian.transpose();
+    
+    // Task space dynamics
+    MatrixXd M_x = pinv_jacobian_T * mass_matrix * pinv_jacobian;
+    MatrixXd C_x = pinv_jacobian_T * (coriolis_matrix - mass_matrix * pinv_jacobian * jacobian_dot) * pinv_jacobian;
+    VectorXd g_x = pinv_jacobian_T * gravity_matrix;
+    
+    // Current end-effector state
+    Vector3d pos_end = T_B7.block<3, 1>(0, 3);
+    Matrix3d rot_end = T_B7.block<3, 3>(0, 0);
+    dp = jacobian * dq;  // Current Cartesian velocity
+    
+    // Desired pose (stationary target)
+    Vector3d pos_d = p_d.head<3>();
+    Matrix3d rot_d = euler_to_rotation_matrix(p_d(3), p_d(4), p_d(5));
+    
+    // Compute 6-DOF pose error
+    pos_difference(pos_end, pos_d, rot_end, rot_d, e);
+    
+    // Velocity error (desired velocity = 0 for chicken head control)
+    VectorXd dp_d = VectorXd::Zero(6);  // Desired velocity = 0
+    e_dot = dp - dp_d;
+    
+    // Chicken Head Control Law
+    // For stationary target: ddp_d = 0, dp_d = 0
+    VectorXd force = C_x*dp + g_x - K_d*e - D_d*e_dot;
+    
+    // Map Cartesian forces to joint torques
+    u = jacobian_T * force;
+    
+    // Apply friction compensation (reuse from original code)
+    friction_compensation(u, dq);
+    
+    // Torque saturation
+    VectorXd gen3_JointTorquesLimits(7);
+    gen3_JointTorquesLimits << 50, 50, 50, 50, 25, 25, 25;
+    
+    for (int i = 0; i < 7; i++) {
+        if(u[i] > 0.9*gen3_JointTorquesLimits[i]){
+            u[i] = 0.9*gen3_JointTorquesLimits[i];
+        }else if(u[i] < -0.9 * gen3_JointTorquesLimits[i]){
+            u[i] = -0.9 * gen3_JointTorquesLimits[i];
+        }
+    }
+    
+    return u;
 }
