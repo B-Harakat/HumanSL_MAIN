@@ -700,19 +700,19 @@ void visualizeTrajectory(
     ::std::string timestamp = ss.str();
     ::std::string filename = "trajectory_animation_" + timestamp + ".html";
     
-    // Save to local Videos directory
-    ::std::string videos_dir = "./TrajectoryAnimation";
-    ::std::string full_path = videos_dir + "/" + filename;
+    // Save to Windows Videos directory via WSL mount
+    ::std::string windows_dir = "/mnt/c/Users/BjornXu/Videos/TrajectoryAnimation";
+    ::std::string full_path = windows_dir + "/" + filename;
     
     // Create directory if it doesn't exist
-    ::std::string mkdir_cmd = "mkdir -p " + videos_dir;
+    ::std::string mkdir_cmd = "mkdir -p " + windows_dir;
     ::std::system(mkdir_cmd.c_str());
     
     ::std::ofstream file(full_path);
     
     if (!file.is_open()) {
         ::std::cerr << "Could not create file: " << full_path << ::std::endl;
-        ::std::cerr << "Make sure the directory exists and is accessible" << ::std::endl;
+        ::std::cerr << "Make sure the Windows directory exists and is accessible" << ::std::endl;
         return;
     }
     
@@ -1125,36 +1125,35 @@ void visualizeTrajectory(
     ::std::cout << "- " << occupied_count << " occupied grid cells" << ::std::endl;
     ::std::cout << "- Saved to: " << full_path << ::std::endl;
     
-    // Try to open in Chrome browser on Linux
+    // Convert WSL path to Windows path for opening
+    ::std::string windows_path = "C:\\Users\\BjornXu\\Videos\\TrajectoryAnimation\\" + filename;
+    
+    // Try multiple methods to open in Windows browser from WSL
     bool opened = false;
     
-    // Method 1: Try google-chrome
-    ::std::string chrome_cmd = "google-chrome \"" + full_path + "\" > /dev/null 2>&1 &";
-    if (::std::system("which google-chrome > /dev/null 2>&1") == 0) {
-        if (::std::system(chrome_cmd.c_str()) == 0) {
+    // Method 1: Use cmd.exe with start command
+    ::std::string start_cmd = "cmd.exe /c start \"\" \"" + windows_path + "\"";
+    if (::std::system(start_cmd.c_str()) == 0) {
+        opened = true;
+        ::std::cout << "Opened in Windows default browser using cmd.exe" << ::std::endl;
+    }
+    
+    // Method 2: Try powershell if cmd failed
+    if (!opened) {
+        ::std::string ps_cmd = "powershell.exe -Command \"Start-Process '" + windows_path + "'\"";
+        if (::std::system(ps_cmd.c_str()) == 0) {
             opened = true;
-            ::std::cout << "Opened in Chrome browser" << ::std::endl;
+            ::std::cout << "Opened in Windows default browser using PowerShell" << ::std::endl;
         }
     }
     
-    // Method 2: Try chromium-browser if google-chrome not available
+    // Method 3: Try wslview if available
     if (!opened) {
-        ::std::string chromium_cmd = "chromium-browser \"" + full_path + "\" > /dev/null 2>&1 &";
-        if (::std::system("which chromium-browser > /dev/null 2>&1") == 0) {
-            if (::std::system(chromium_cmd.c_str()) == 0) {
+        if (::std::system("which wslview > /dev/null 2>&1") == 0) {
+            ::std::string wslview_cmd = "wslview \"" + full_path + "\"";
+            if (::std::system(wslview_cmd.c_str()) == 0) {
                 opened = true;
-                ::std::cout << "Opened in Chromium browser" << ::std::endl;
-            }
-        }
-    }
-    
-    // Method 3: Try xdg-open as fallback
-    if (!opened) {
-        ::std::string xdg_cmd = "xdg-open \"" + full_path + "\" > /dev/null 2>&1 &";
-        if (::std::system("which xdg-open > /dev/null 2>&1") == 0) {
-            if (::std::system(xdg_cmd.c_str()) == 0) {
-                opened = true;
-                ::std::cout << "Opened with default browser" << ::std::endl;
+                ::std::cout << "Opened using wslview" << ::std::endl;
             }
         }
     }
@@ -1162,16 +1161,18 @@ void visualizeTrajectory(
     if (!opened) {
         ::std::cout << "\n=== MANUAL OPENING REQUIRED ===" << ::std::endl;
         ::std::cout << "Could not open browser automatically." << ::std::endl;
-        ::std::cout << "Please manually open the file:" << ::std::endl;
-        ::std::cout << "File location: " << full_path << ::std::endl;
+        ::std::cout << "Please manually open in Windows:" << ::std::endl;
+        ::std::cout << "File location: " << windows_path << ::std::endl;
         ::std::cout << "\nAlternative methods:" << ::std::endl;
-        ::std::cout << "1. Open file manager and navigate to: ./TrajectoryAnimation/" << ::std::endl;
+        ::std::cout << "1. Open Windows File Explorer and navigate to:" << ::std::endl;
+        ::std::cout << "   C:\\Users\\BjornXu\\Videos\\TrajectoryAnimation\\" << ::std::endl;
         ::std::cout << "2. Double-click: " << filename << ::std::endl;
-        ::std::cout << "3. Or from command line:" << ::std::endl;
-        ::std::cout << "   google-chrome \"" << full_path << "\"" << ::std::endl;
+        ::std::cout << "3. Or from WSL command line:" << ::std::endl;
+        ::std::cout << "   explorer.exe \"" << windows_path << "\"" << ::std::endl;
     }
 
 }
+
 
 void storeEventToYaml(
     const std::deque<Eigen::VectorXd>& trajectory,

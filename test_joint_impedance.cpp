@@ -10,7 +10,7 @@
 #define PORT 10000
 #define PORT_REAL_TIME 10001
 #define ACTUATOR_COUNT 7
-#define JOINT_CONTROL_FREQUENCY 500
+#define JOINT_CONTROL_FREQUENCY 250
 #define TASK_CONTROL_FREQUENCY 500
 #define GPMP2_TIMESTEPS 10
 
@@ -113,7 +113,7 @@ int main(){
     std::vector<double> q_cur_right_snapshot; 
 
     std::vector<double> q_init_right(7);
-    q_init_right= {0,0,0,0,0,0,0}; // in deg
+    q_init_right= {0,30,0,0,0,-30,0}; // in deg
 
     Gen3Arm right_arm(right_ip_address, robot_urdf_path, dh_params_path, joint_limit_path);
     
@@ -157,14 +157,6 @@ int main(){
 
     std::this_thread::sleep_for(std::chrono::milliseconds(1000)); 
 
-    // Set actuators in position mode
-    auto control_mode_message = k_api::ActuatorConfig::ControlModeInformation();
-    control_mode_message.set_control_mode(k_api::ActuatorConfig::ControlMode::TORQUE);
-    for (int id = 1; id < ACTUATOR_COUNT+1; id++)
-    {
-        right_actuator_config->SetControlMode(control_mode_message, id);
-    }
-
     move_gripper(right_base_cyclic, 0);
 
     {   
@@ -181,14 +173,26 @@ int main(){
     right_arm.make_sdf(tube_info_snapshot, human_info_snapshot, false, left_base_frame_snapshot, q_cur_left_snapshot);
 
     right_arm.plan_joint(joint_trajectory, q_init_right, q_target_right, right_base_frame,  
-                         right_approach_time_sec, GPMP2_TIMESTEPS, 500);
+                         right_approach_time_sec, GPMP2_TIMESTEPS, JOINT_CONTROL_FREQUENCY);
 
     visualizeTrajectory(joint_trajectory.pos, right_arm.arm_model_logs, right_arm.dataset_logs, right_base_frame);
 
     std::cout << "Test trajectory planned, press Enter to continue to execution.";
     std::cin.get();
+
+    // Send first frame with current positions to ensure continuity
+    right_base_feedback = right_base_cyclic->Refresh(right_base_command);
+
+    // Set actuators in torque mode AFTER sending the first frame
+    auto control_mode_message = k_api::ActuatorConfig::ControlModeInformation();
+    control_mode_message.set_control_mode(k_api::ActuatorConfig::ControlMode::TORQUE);
+    for (int id = 1; id < ACTUATOR_COUNT+1; id++)
+    {
+        right_actuator_config->SetControlMode(control_mode_message, id);
+    }
     
     std::atomic<bool> right_arm_flag_1{true};
+    std::atomic<bool> chicken_flag{false};
 
     // std::thread check_replan_thread;
     // check_replan_thread = std::thread([&]() {
@@ -219,7 +223,9 @@ int main(){
         joint_control_execution(right_base,right_base_cyclic,right_actuator_config, right_base_feedback, 
             right_base_command, right_robot, joint_trajectory, 
             right_base_frame, JOINT_CONTROL_FREQUENCY, 
-            std::ref(right_arm_flag_1), std::ref(replan_counter), 
+            std::ref(right_arm_flag_1), 
+            std::ref(chicken_flag), std::ref(vicon_data_mutex), dh_params_path,
+            std::ref(replan_counter), 
             std::ref(replan_triggered), std::ref(new_trajectory_ready), 
             std::ref(new_joint_trajectory), std::ref(trajectory_mutex), std::ref(trajectory_record));
     });
@@ -229,8 +235,8 @@ int main(){
 
 
     // ##### Move Gripper #####
-    std::cout << "Moving Gripper \n";
-    move_gripper(right_base_cyclic, 50);
+    // std::cout << "Moving Gripper \n";
+    // move_gripper(right_base_cyclic, 50);
     
     std::this_thread::sleep_for(std::chrono::milliseconds(200)); 
 
@@ -240,7 +246,8 @@ int main(){
 
 
     // ############## Task EXECUTION ####################
-
+    std::cout << "Test trajectory planned, press Enter to continue to execution.";
+    std::cin.get();
     {   
         std::shared_lock<std::shared_mutex> joint_lock(joint_data_mutex);
         q_cur_right_snapshot = shiftAngle(q_cur_right);
@@ -270,7 +277,7 @@ int main(){
     std::cout << " End Pose: " << target_pose << "\n";
 
     right_arm.plan_task(new_joint_trajectory, start_pose, target_pose, right_base_frame_snapshot, q_cur_right_snapshot,
-                         3.0, 5, 0.35, 0.23, 500);
+                         3.0, 5, 0.35, 0.0, JOINT_CONTROL_FREQUENCY);
     
     std::cout << " Start conf: ";
     for (auto& elem : new_joint_trajectory.pos[0]) std::cout << elem << ", ";
@@ -294,38 +301,32 @@ int main(){
     std::cout << "Test trajectory planned, press Enter to continue to execution.";
     std::cin.get();
 
-    Eigen::VectorXd p_d_world(6);
-    gtsam::Vector3 pos = start_pose.translation();
-    gtsam::Vector3 rpy = start_pose.rotation().rpy();
-    p_d_world << pos.x(), pos.y(), pos.z(), rpy.x(), rpy.y(), rpy.z();
+    chicken_flag.store(true);
 
-    // Thread to translate right_base_frame by 0.3m in negative x-direction after 2 seconds
-    std::thread translate_frame_thread([&]() {
+    // Eigen::VectorXd p_d_world(6);
+    // gtsam::Vector3 pos = start_pose.translation();
+    // gtsam::Vector3 rpy = start_pose.rotation().rpy();
+    // p_d_world << pos.x(), pos.y(), pos.z(), rpy.x(), rpy.y(), rpy.z();
 
-        for(int i =0; i < 10; i++){
-            std::this_thread::sleep_for(std::chrono::seconds(2));
-            std::cout << "Translating base frame ... \n"; 
-            std::lock_guard<std::shared_mutex> lock(vicon_data_mutex);
-            gtsam::Point3 current_translation = right_base_frame.translation();
-            gtsam::Point3 new_translation(current_translation.x() - 0.02, current_translation.y(), current_translation.z());
-            right_base_frame = gtsam::Pose3(right_base_frame.rotation(), new_translation);
-        }
-    });
-    translate_frame_thread.detach();
+    // // Thread to translate right_base_frame by 0.3m in negative x-direction after 2 seconds
+    // std::thread translate_frame_thread([&]() {
+
+    //     for(int i =0; i < 10; i++){
+    //         std::this_thread::sleep_for(std::chrono::seconds(2));
+    //         std::cout << "Translating base frame ... \n"; 
+    //         std::lock_guard<std::shared_mutex> lock(vicon_data_mutex);
+    //         gtsam::Point3 current_translation = right_base_frame.translation();
+    //         gtsam::Point3 new_translation(current_translation.x() - 0.02, current_translation.y(), current_translation.z());
+    //         right_base_frame = gtsam::Pose3(right_base_frame.rotation(), new_translation);
+    //     }
+    // });
+    // translate_frame_thread.detach();
+
+    std::cout << "Test trajectory planned, press Enter to continue to execution.";
+    std::cin.get();
 
     right_arm_flag_1.store(false);
 
-    std::atomic<bool> chicken_flag{true};
-
-    std::thread chicken_thread;
-    chicken_thread = std::thread([&]() {
-        chicken_head_control_execution(right_base, right_base_cyclic, right_actuator_config, 
-                                    right_base_feedback, right_base_command, right_robot, p_d_world,
-                                right_base_frame, 500, dh_params_path, std::ref(vicon_data_mutex),
-                            chicken_flag);
-    });
-
-    chicken_thread.detach();
 
 
 

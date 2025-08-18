@@ -94,7 +94,8 @@ bool plan_action(
     std::vector<double>& q_init_left,
     Gen3Arm& right_arm,
     Gen3Arm& left_arm,
-    JointTrajectory& joint_trajectory,
+    JointTrajectory& left_joint_trajectory,
+    JointTrajectory& right_joint_trajectory,
     JointTrajectory& new_joint_trajectory,
     std::mutex& trajectory_mutex
 ) {
@@ -133,6 +134,8 @@ bool plan_action(
 
         std::cout << "Right Base pose: " << right_base_frame_snapshot << "\n";
 
+        std::cout << "left Base pose: " << left_base_frame_snapshot << "\n";
+        
         switch(trigger_id.load()){
             case 1: // Right arm engages pipe
             {
@@ -157,7 +160,7 @@ bool plan_action(
                 double grasp_offset_z = 0.001;
                 double grasp_time_sec = 1.5;
 
-                std::vector<double> std_vec1(joint_trajectory.pos.back().data(), joint_trajectory.pos.back().data() + joint_trajectory.pos.back().size());
+                std::vector<double> std_vec1(right_joint_trajectory.pos.back().data(), right_joint_trajectory.pos.back().data() + right_joint_trajectory.pos.back().size());
                 q_cur_right_snapshot = std_vec1;
 
                 right_arm.make_sdf(tube_info_snapshot, human_info_snapshot, false, left_base_frame_snapshot, q_cur_left_snapshot);
@@ -188,7 +191,7 @@ bool plan_action(
                                                                     move_offset_from_human_mid_x, 
                                                                     move_offset_from_human_max_z);
     
-                std::vector<double> std_vec1(joint_trajectory.pos.back().data(), joint_trajectory.pos.back().data() + joint_trajectory.pos.back().size());
+                std::vector<double> std_vec1(right_joint_trajectory.pos.back().data(), right_joint_trajectory.pos.back().data() + right_joint_trajectory.pos.back().size());
                 q_cur_right_snapshot = std_vec1;
 
                 right_arm.make_sdf(tube_info_snapshot, human_info_snapshot, false, left_base_frame_snapshot, q_cur_left_snapshot);
@@ -225,7 +228,7 @@ bool plan_action(
                 double grasp_offset_z = 0.001;
                 double grasp_time_sec = 1.5;
 
-                std::vector<double> std_vec1(joint_trajectory.pos.back().data(), joint_trajectory.pos.back().data() + joint_trajectory.pos.back().size());
+                std::vector<double> std_vec1(left_joint_trajectory.pos.back().data(), left_joint_trajectory.pos.back().data() + left_joint_trajectory.pos.back().size());
                 q_cur_left_snapshot = std_vec1;
 
                 left_arm.make_sdf(tube_info_snapshot, human_info_snapshot, false, right_base_frame_snapshot, q_cur_right_snapshot);
@@ -265,7 +268,7 @@ bool plan_action(
 
             case 7: // Right arm moves back to default position
             {
-                std::vector<double> std_vec1(joint_trajectory.pos.back().data(), joint_trajectory.pos.back().data() + joint_trajectory.pos.back().size());
+                std::vector<double> std_vec1(right_joint_trajectory.pos.back().data(), right_joint_trajectory.pos.back().data() + right_joint_trajectory.pos.back().size());
                 q_cur_right_snapshot = std_vec1;
 
                 double disengage_time_sec = 3.0;
@@ -307,9 +310,14 @@ bool plan_action(
         std::cout << "Pipe approach planned, press Enter to conitnue to execution.";
         std::cin.get();
 
-        {
+        if(trigger_id.load() == 1 || trigger_id.load() == 2 || trigger_id.load() == 3 || trigger_id.load() == 6 || trigger_id.load() == 7){
             std::lock_guard<std::mutex> lock(trajectory_mutex);
-            joint_trajectory = std::move(new_joint_trajectory);
+            right_joint_trajectory = std::move(new_joint_trajectory);
+        }
+
+        if(trigger_id.load() == 4 || trigger_id.load() == 5){
+            std::lock_guard<std::mutex> lock(trajectory_mutex);
+            left_joint_trajectory = std::move(new_joint_trajectory);
         }
         
         return true;  // Success
@@ -324,9 +332,11 @@ bool plan_action(
     }
 }
 
+
+
 int main(){
 
-    // Register signal handlers for cleanup
+    // Kinova connection set up (Hidden)
     signal(SIGINT, signal_handler);   // Ctrl+C
     signal(SIGTERM, signal_handler);  // Termination signal
     signal(SIGABRT, signal_handler);  // Abort signal
@@ -442,47 +452,7 @@ int main(){
     }
 
 
-
-
-
     // My code starts here
-    //
-    //
-    // My code starts here
-
-
-    YAML::Node config = YAML::LoadFile(parameters_path);
-    auto traj_params = config["trajectory_parameters"];
-    
-    // Right approach phase parameters
-    double right_approach_offset_y = traj_params["right_approach_phase"]["offset_from_human_y"].as<double>();
-    double right_approach_offset_z = traj_params["right_approach_phase"]["offset_from_tube_z"].as<double>();
-    double right_approach_time_sec = traj_params["right_approach_phase"]["time_sec"].as<double>();
-
-    // Right grasp phase parameters
-    double right_grasp_offset_y = traj_params["right_grasp_phase"]["offset_from_human_y"].as<double>();
-    double right_grasp_offset_z = traj_params["right_grasp_phase"]["offset_from_tube_z"].as<double>();
-    double right_grasp_time_sec = traj_params["right_grasp_phase"]["time_sec"].as<double>();
-    
-    // Right shoulder phase parameters
-    double right_shoulder_time_sec = traj_params["right_shoulder_phase"]["time_sec"].as<double>();
-    double right_shoulder_percentage = traj_params["right_shoulder_phase"]["percentage"].as<double>();
-    double right_shoulder_height = traj_params["right_shoulder_phase"]["height"].as<double>();
-
-    double left_approach_offset_y = traj_params["left_approach_phase"]["offset_from_human_y"].as<double>();
-    double left_approach_offset_z = traj_params["left_approach_phase"]["offset_from_tube_z"].as<double>();
-    double left_approach_time_sec = traj_params["left_approach_phase"]["time_sec"].as<double>();
-
-    // Right grasp phase parameters
-    double left_grasp_offset_y = traj_params["left_grasp_phase"]["offset_from_human_y"].as<double>();
-    double left_grasp_offset_z = traj_params["left_grasp_phase"]["offset_from_tube_z"].as<double>();
-    double left_grasp_time_sec = traj_params["left_grasp_phase"]["time_sec"].as<double>();
-    
-    // Right disengage phase parameters
-    double right_disengage_offset_y = traj_params["right_disengage_phase_1"]["offset_from_human_y"].as<double>();
-    double right_disengage_offset_z = traj_params["right_disengage_phase_1"]["offset_from_tube_z"].as<double>();
-    double right_disengage_time_sec = traj_params["right_disengage_phase_1"]["time_sec"].as<double>();
-
     std::shared_mutex vicon_data_mutex;
     std::shared_mutex joint_data_mutex;
     
@@ -495,7 +465,9 @@ int main(){
     // Thread-safe phase trigger
     std::atomic<int> phase_idx{0};
 
-    JointTrajectory joint_trajectory;
+    JointTrajectory right_joint_trajectory;
+    JointTrajectory left_joint_trajectory;
+
     JointTrajectory new_joint_trajectory;  // Buffer for new trajectory
     TaskTrajectory task_trajectory;
 
@@ -520,6 +492,10 @@ int main(){
     std::vector<double> q_cur_right_snapshot; 
     std::vector<double> q_cur_left_snapshot;
 
+    std::atomic<bool> motion_flag;
+    std::atomic<bool> right_chicken_flag;
+    std::atomic<bool> left_chicken_flag;
+
 
     std::vector<double> q_init_left(7); 
     q_init_left = {-90,90,-15,45,5,5,-175};  // in deg
@@ -531,7 +507,8 @@ int main(){
     Gen3Arm right_arm(right_ip_address, robot_urdf_path, dh_params_path, joint_limit_path);
 
 
-    TrajectoryRecord right_grasp_phase_record;
+    TrajectoryRecord right_record;
+    TrajectoryRecord left_record;
 
 
     move_single_level(left_base, q_init_left);
@@ -540,6 +517,7 @@ int main(){
     std::vector<float> commands_left;
     std::vector<float> commands_right;
 
+    // Initialize actuator to low level control
     auto servoing_mode = k_api::Base::ServoingModeInformation();
     servoing_mode.set_servoing_mode(k_api::Base::ServoingMode::LOW_LEVEL_SERVOING);
     
@@ -606,314 +584,61 @@ int main(){
 
     std::this_thread::sleep_for(std::chrono::milliseconds(1000)); 
 
-    // Set actuators in position mode
+    move_gripper(right_base_cyclic, 0);
+    move_gripper(left_base_cyclic,  0);
+
+    Eigen::VectorXd q_init_right_eigen = Eigen::Map<Eigen::VectorXd>(q_init_right.data(), q_init_right.size());
+    Eigen::VectorXd q_init_left_eigen = Eigen::Map<Eigen::VectorXd>(q_init_left.data(), q_init_left.size());
+    
+    Eigen::VectorXd q_init_vel; Eigen::VectorXd q_init_acc;
+    q_init_vel << 0.0,0.0,0.0,0.0,0.0,0.0,0.0;
+    q_init_acc << 0.0,0.0,0.0,0.0,0.0,0.0,0.0;
+
+    right_joint_trajectory.pos.push_back(q_init_right_eigen);
+    right_joint_trajectory.vel.push_back(q_init_vel);
+    right_joint_trajectory.acc.push_back(q_init_acc);
+
+    left_joint_trajectory.pos.push_back(q_init_left_eigen);
+    left_joint_trajectory.vel.push_back(q_init_vel);
+    left_joint_trajectory.acc.push_back(q_init_acc);
+
+    // Set actuators in torque mode
     auto control_mode_message = k_api::ActuatorConfig::ControlModeInformation();
-    control_mode_message.set_control_mode(k_api::ActuatorConfig::ControlMode::POSITION);
+    control_mode_message.set_control_mode(k_api::ActuatorConfig::ControlMode::TORQUE);
     for (int id = 1; id < ACTUATOR_COUNT+1; id++)
     {
         left_actuator_config->SetControlMode(control_mode_message, id);
         right_actuator_config->SetControlMode(control_mode_message, id);
     }
 
-    move_gripper(right_base_cyclic, 0);
-    move_gripper(left_base_cyclic,  0);
-
-    std::atomic<bool> right_arm_flag_1 = true;
-    std::atomic<bool> right_arm_flag_2 = false;
-    std::atomic<bool> right_arm_flag_3 = false;
-
-    // while(!(phase_idx.load()==1)); // replace with trigger condition
-    while(!right_arm_flag_1.load());
-    
-    {
-        std::shared_lock<std::shared_mutex> vicon_lock(vicon_data_mutex);
-        left_base_frame_snapshot = left_base_frame;
-        right_base_frame_snapshot = right_base_frame; 
-        tube_info_snapshot = tube_info;
-        human_info_snapshot = human_info;
-    }
-
-    {   
-        std::shared_lock<std::shared_mutex> joint_lock(joint_data_mutex);
-        q_cur_left_snapshot = shiftAngle(q_cur_left);
-        q_cur_right_snapshot = shiftAngle(q_cur_right);
-    }
-
-    std::cout << "Left angle snap shot: ";
-    for(auto& k : q_cur_left_snapshot){std::cout << k << ", ";}
-    std::cout << "\n";
-
-    std::cout << "Right angle snap shot: ";
-    for(auto& k : q_cur_right_snapshot){std::cout << k << ", ";}
-    std::cout << "\n";
-
-    std::cout << "Right Base pose: " << right_base_frame_snapshot << "\n";
-
-    // TubeInfo tube_info_dummy;
-    // HumanInfo human_info_dummy;
-    right_arm.make_sdf(tube_info, human_info, true, left_base_frame_snapshot, q_cur_left_snapshot);
-    // std::cout << right_base_frame_snapshot; 
-    right_arm.plan_joint(joint_trajectory, q_init_right, right_base_frame_snapshot, 
-                         tube_info_snapshot, human_info_snapshot, 
-                         right_approach_offset_y, right_approach_offset_z, 
-                         right_approach_time_sec, GPMP2_TIMESTEPS, JOINT_CONTROL_FREQUENCY);
-    
-    // visualizeTrajectory(joint_trajectory.pos, right_arm.arm_model_logs, right_arm.dataset_logs, right_base_frame_snapshot);
-    saveTrajectoryResultToYAML(right_arm.result_logs,"gpmp2");
-    std::cout << "Pipe approach planned, press Enter to conitnue to execution.";
-    std::cin.get();
-
-    std::atomic<int> phase_idx_dummy1{1};
-    std::thread check_replan_thread;
-    std::thread joint_execution_thread;
-    check_replan_thread = std::thread([&]() {
-            gtsam::Pose3 target_pose = right_arm.target_pose_logs;
-            right_arm.replan(
-                joint_trajectory, new_joint_trajectory, right_base_frame, target_pose,
-                std::ref(vicon_data_mutex), std::ref(joint_data_mutex), 
-                std::ref(trajectory_mutex),
-                std::ref(replan_triggered), std::ref(new_trajectory_ready), 
-                std::ref(right_arm_flag_1), std::ref(phase_idx_dummy1),
-                tube_info_snapshot, human_info_snapshot, q_cur_right,
-                right_approach_offset_y, right_approach_offset_z, 
-                GPMP2_TIMESTEPS, JOINT_CONTROL_FREQUENCY
-            );
-        });
-
-    joint_execution_thread = std::thread([&]() {
+    std::thread right_robot_execution_thread;
+    right_robot_execution_thread = std::thread([&]() {
         joint_control_execution(right_base,right_base_cyclic,right_actuator_config, right_base_feedback, 
-            right_base_command, right_robot, joint_trajectory, 
+            right_base_command, right_robot, right_joint_trajectory, 
             right_base_frame, JOINT_CONTROL_FREQUENCY, 
-            std::ref(right_arm_flag_1), std::ref(replan_counter), 
+            std::ref(motion_flag), 
+            std::ref(right_chicken_flag), std::ref(vicon_data_mutex), dh_params_path,
+            std::ref(replan_counter), 
             std::ref(replan_triggered), std::ref(new_trajectory_ready), 
-            std::ref(new_joint_trajectory), std::ref(trajectory_mutex), right_grasp_phase_record);
+            std::ref(new_joint_trajectory), std::ref(trajectory_mutex), std::ref(right_record));
     });
-      
-    joint_execution_thread.join();
-    check_replan_thread.join();
 
-    std::cout << "Pipe approach finished \n";
-
-    {
-        std::shared_lock<std::shared_mutex> vicon_lock(vicon_data_mutex);
-        left_base_frame_snapshot = left_base_frame;
-        right_base_frame_snapshot = right_base_frame; 
-        tube_info_snapshot = tube_info;
-        human_info_snapshot = human_info;
-    }
-
-    {   
-        std::shared_lock<std::shared_mutex> joint_lock(joint_data_mutex);
-        q_cur_left_snapshot = shiftAngle(q_cur_left);
-        // q_cur_right_snapshot = shiftAngle(q_cur_right);
-        
-        std::vector<double> std_vec1(joint_trajectory.pos.back().data(), joint_trajectory.pos.back().data() + joint_trajectory.pos.back().size());
-        q_cur_right_snapshot = std_vec1;
-    }
-
-
-    // right_arm.make_sdf(left_base_frame_snapshot, q_cur_left_snapshot, tube_info_snapshot, human_info_snapshot, false);
-    right_arm.make_sdf(tube_info_snapshot, human_info_snapshot, false, left_base_frame_snapshot, q_cur_left_snapshot);
-    right_arm.plan_joint(joint_trajectory, q_cur_right_snapshot, right_base_frame_snapshot, 
-                            tube_info_snapshot, human_info_snapshot, right_grasp_offset_y, 
-                            right_grasp_offset_z, right_grasp_time_sec, 
-                            GPMP2_TIMESTEPS, JOINT_CONTROL_FREQUENCY);
-    
-    visualizeTrajectory(joint_trajectory.pos, right_arm.arm_model_logs, right_arm.dataset_logs, right_base_frame_snapshot);
-    // std::cout << "Pipe grasp planned, press Enter to conitnue to execution.";
-    // std::cin.get();
-
-
-    right_arm_flag_2.store(true);
-
-
-    joint_control_execution(right_base,right_base_cyclic,right_actuator_config, right_base_feedback, 
-                right_base_command, right_robot, joint_trajectory, 
-                right_base_frame, JOINT_CONTROL_FREQUENCY, 
-                std::ref(right_arm_flag_2), std::ref(replan_counter), 
-                std::ref(replan_triggered), std::ref(new_trajectory_ready), 
-                std::ref(new_joint_trajectory), std::ref(trajectory_mutex), right_grasp_phase_record); 
-    
-    saveRecordToYAML(right_grasp_phase_record, "right_grasp_phase_record");
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    move_gripper(right_base_cyclic, 50);
-
-
-    while(right_arm_flag_2.load());
-
-    {
-        std::shared_lock<std::shared_mutex> vicon_lock(vicon_data_mutex);
-        left_base_frame_snapshot = left_base_frame;
-        right_base_frame_snapshot = right_base_frame; 
-        tube_info_snapshot = tube_info;
-        human_info_snapshot = human_info;
-    }
-
-    {
-        std::shared_lock<std::shared_mutex> joint_lock(joint_data_mutex);
-        q_cur_left_snapshot = shiftAngle(q_cur_left);
-        q_cur_right_snapshot = shiftAngle(q_cur_right);
-    }
-
-    auto start_pose = right_arm.forward_kinematics(right_base_frame_snapshot,q_cur_right_snapshot);
-    auto target_pose_to_above_head = right_arm.create_target_pose(human_info_snapshot, right_grasp_offset_y, start_pose, 0.2);
-    right_arm.plan_task(task_trajectory, start_pose, target_pose_to_above_head, right_shoulder_time_sec, right_shoulder_percentage, right_shoulder_height);
-
-    std::cout << "Task Start Pose: " << start_pose << "\n";
-    std::cout << "Task target Pose: " << target_pose_to_above_head << "\n";
-
-    right_arm_flag_3 = true;
-
-    Eigen::VectorXd vec = task_trajectory.pos.front();
-    gtsam::Point3 translation(vec(0), vec(1), vec(2));
-
-    // Extract rotation angles
-    double roll = vec(3);
-    double pitch = vec(4);
-    double yaw = vec(5);
-
-    // Create rotation matrix from RPY angles
-    gtsam::Rot3 rotation = gtsam::Rot3::Ypr(yaw, pitch, roll);
-
-    gtsam::Pose3 start_pose_planned = gtsam::Pose3(rotation, translation);
-
-    std::cout << "Planned Task Start Pose: " << start_pose_planned << "\n";
-
-    visualizeTaskTrajectory(task_trajectory.pos, right_arm.dataset_logs, right_base_frame);
-
-    std::cout << "Press Enter To Continue: \n";
-    std::cin.get(); 
-
-    std::this_thread::sleep_for(std::chrono::seconds(10));
-
-    control_mode_message.set_control_mode(k_api::ActuatorConfig::ControlMode::TORQUE);
-    for (int id = 1; id < ACTUATOR_COUNT+1; id++)
-    {
-        right_actuator_config->SetControlMode(control_mode_message, id);
-    }
-
-    task_control_execution(right_base,right_base_cyclic,right_actuator_config,
-            right_base_feedback, right_base_command, right_robot, 
-            task_trajectory, right_base_frame, TASK_CONTROL_FREQUENCY, dh_params_path,
-            std::ref(right_arm_flag_3));
-
-
-    control_mode_message.set_control_mode(k_api::ActuatorConfig::ControlMode::POSITION);
-    for (int id = 1; id < ACTUATOR_COUNT+1; id++)
-    {
-        right_actuator_config->SetControlMode(control_mode_message, id);
-    }
-
-    
-
-    std::atomic<bool> left_arm_flag_1 = true;
-    std::atomic<bool> left_arm_flag_2 = false;
-    std::atomic<bool> left_arm_flag_3 = false;
-
-    while(!left_arm_flag_1.load()); // replace with trigger condition
-
-    {
-        std::shared_lock<std::shared_mutex> vicon_lock(vicon_data_mutex);
-        left_base_frame_snapshot = left_base_frame;
-        right_base_frame_snapshot = right_base_frame; 
-        tube_info_snapshot = tube_info;
-        human_info_snapshot = human_info;
-    }
-
-    std::cout << "Left base frame: " << left_base_frame_snapshot << "\n";
-    std::cout << "Right base frame: " << right_base_frame_snapshot << "\n";
-
-    {   
-        std::shared_lock<std::shared_mutex> joint_lock(joint_data_mutex);
-        q_cur_left_snapshot = q_cur_left;
-        q_cur_right_snapshot = q_cur_right;
-    }
-
-    
-    left_arm.make_sdf(tube_info_snapshot, human_info_snapshot, true, right_base_frame_snapshot, q_cur_right_snapshot);
-    // std::cout << right_base_frame_snapshot; 
-    left_arm.plan_joint(joint_trajectory, q_init_left, left_base_frame_snapshot, 
-                         tube_info_snapshot, human_info_snapshot, 
-                         right_approach_offset_y+0.1, right_approach_offset_z, 
-                         right_approach_time_sec, GPMP2_TIMESTEPS, JOINT_CONTROL_FREQUENCY,false);
-
-    visualizeTrajectory(joint_trajectory.pos, left_arm.arm_model_logs, left_arm.dataset_logs, left_base_frame_snapshot);
-    saveTrajectoryResultToYAML(left_arm.result_logs,"left_approach");
-    std::cout << "Pipe approach planned, press Enter to conitnue to execution.";
-    std::cin.get();
-
-    std::atomic<int> phase_idx_dummy3{3};
-    
-    check_replan_thread = std::thread([&]() {
-            gtsam::Pose3 target_pose = left_arm.target_pose_logs;
-            left_arm.replan(
-                joint_trajectory, new_joint_trajectory, left_base_frame, target_pose,
-                std::ref(vicon_data_mutex), std::ref(joint_data_mutex), 
-                std::ref(trajectory_mutex),
-                std::ref(replan_triggered), std::ref(new_trajectory_ready), 
-                std::ref(left_arm_flag_1), std::ref(phase_idx_dummy3),
-                tube_info_snapshot, human_info_snapshot, q_cur_left,
-                right_approach_offset_y+0.1, right_approach_offset_z, GPMP2_TIMESTEPS, JOINT_CONTROL_FREQUENCY
-            );
-        });
-
-    joint_execution_thread = std::thread([&]() {
+    std::thread left_robot_execution_thread;
+    left_robot_execution_thread = std::thread([&]() {
         joint_control_execution(left_base,left_base_cyclic,left_actuator_config, left_base_feedback, 
-            left_base_command, left_robot, joint_trajectory, 
+            left_base_command, left_robot, left_joint_trajectory, 
             left_base_frame, JOINT_CONTROL_FREQUENCY, 
-            std::ref(left_arm_flag_1), std::ref(replan_counter), 
+            std::ref(motion_flag), 
+            std::ref(left_chicken_flag), std::ref(vicon_data_mutex), dh_params_path,
+            std::ref(replan_counter), 
             std::ref(replan_triggered), std::ref(new_trajectory_ready), 
-            std::ref(new_joint_trajectory), std::ref(trajectory_mutex), right_grasp_phase_record);
+            std::ref(new_joint_trajectory), std::ref(trajectory_mutex), std::ref(left_record));
     });
       
-    joint_execution_thread.join();
-    check_replan_thread.join();
-
-    std::cout << "Pipe approach finished \n";
+    right_robot_execution_thread.detach();
+    left_robot_execution_thread.detach();
 
 
-    {
-        std::shared_lock<std::shared_mutex> vicon_lock(vicon_data_mutex);
-        left_base_frame_snapshot = left_base_frame;
-        right_base_frame_snapshot = right_base_frame; 
-        tube_info_snapshot = tube_info;
-        human_info_snapshot = human_info;
-    }
-
-    {   
-        std::shared_lock<std::shared_mutex> joint_lock(joint_data_mutex);
-        // q_cur_left_snapshot = shiftAngle(q_cur_left);
-        q_cur_right_snapshot = shiftAngle(q_cur_right);
-        
-        std::vector<double> std_vec1(joint_trajectory.pos.back().data(), joint_trajectory.pos.back().data() + joint_trajectory.pos.back().size());
-        q_cur_left_snapshot = std_vec1;
-    }
-
-
-    left_arm.make_sdf(tube_info_snapshot, human_info_snapshot, false, right_base_frame_snapshot, q_cur_right_snapshot);
-    left_arm.plan_joint(joint_trajectory, q_cur_left_snapshot, left_base_frame_snapshot, 
-                            tube_info_snapshot, human_info_snapshot, right_grasp_offset_y+0.1, 
-                            right_grasp_offset_z, right_grasp_time_sec, 
-                            GPMP2_TIMESTEPS, JOINT_CONTROL_FREQUENCY);
-    
-    visualizeTrajectory(joint_trajectory.pos, left_arm.arm_model_logs, left_arm.dataset_logs, left_base_frame_snapshot);
-    
-    std::cout << "Pipe grasp planned, press Enter to conitnue to execution.";
-    std::cin.get();
-
-    left_arm_flag_2.store(true);
-
-
-    joint_control_execution(left_base,left_base_cyclic,left_actuator_config, left_base_feedback, 
-                left_base_command, left_robot, joint_trajectory, 
-                left_base_frame, JOINT_CONTROL_FREQUENCY, 
-                std::ref(left_arm_flag_2), std::ref(replan_counter), 
-                std::ref(replan_triggered), std::ref(new_trajectory_ready), 
-                std::ref(new_joint_trajectory), std::ref(trajectory_mutex), right_grasp_phase_record); 
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    move_gripper(right_base_cyclic, 50);
 
 
     // Insert execution codes here

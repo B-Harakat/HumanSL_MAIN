@@ -11,6 +11,7 @@
 #include <Eigen/Dense>
 #include <cmath>
 #include <iostream>
+#include <iomanip>
 #include <tuple>
 
 #include <Jacobian.h>
@@ -509,12 +510,11 @@ VectorXd Controller::joint_impedance_controller(Dynamics &robot, VectorXd& q, Ve
     }
 
     std::cout << "Joint torques: ";
-
-    for (auto u_i : u){
-        std::cout << u_i;
-    };
-
-    std::cout << " "<< std::endl;
+    for (int i = 0; i < u.size(); i++){
+        std::cout << std::fixed << std::setprecision(3) << u[i];
+        if (i < u.size() - 1) std::cout << ", ";
+    }
+    std::cout << std::endl;
 
     return u;
 }
@@ -569,8 +569,8 @@ VectorXd Controller::chicken_head_controller(Dynamics& robot,
     pos_difference(pos_end, pos_d, rot_end, rot_d, e);
     
     // Velocity error (desired velocity = 0 for chicken head control)
-    VectorXd dp_d = VectorXd::Zero(6);  // Desired velocity = 0
-    e_dot = dp - dp_d;
+    // VectorXd dp_d = VectorXd::Zero(6);  // Desired velocity = 0
+    e_dot = dp;
     
     // Chicken Head Control Law
     // For stationary target: ddp_d = 0, dp_d = 0
