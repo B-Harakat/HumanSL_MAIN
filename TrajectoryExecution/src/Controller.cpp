@@ -450,15 +450,19 @@ void Controller::ini_controller(Vector3d& pos, MatrixXd& T_B7){
 
 VectorXd Controller::joint_impedance_controller(Dynamics &robot, VectorXd& q, VectorXd& dq, VectorXd& ddq,
                                                       VectorXd& q_d, VectorXd& dq_d, VectorXd& ddq_d,
-                                                      VectorXd& K_joint_diag, 
+                                                      VectorXd& K_joint_diag, VectorXd& K_integral_diag,
                                                       int c_f, double& time_period){
     // Output
     VectorXd u(7);
 
-    // Compute the joint stiffness and damping matrices
+    // Static variable to accumulate integral error
+    static VectorXd integral_error = VectorXd::Zero(7);
+
+    // Compute the joint stiffness, damping, and integral matrices
     Vector<double, 7> D_joint_diag = 2 * K_joint_diag.array().sqrt();
     DiagonalMatrix<double, 7> D_joint = D_joint_diag.asDiagonal();
     DiagonalMatrix<double, 7> K_joint = K_joint_diag.asDiagonal();
+    DiagonalMatrix<double, 7> K_integral = K_integral_diag.asDiagonal();
 
     // Joint torques limits
     VectorXd gen3_JointTorquesLimits(7);
@@ -488,16 +492,18 @@ VectorXd Controller::joint_impedance_controller(Dynamics &robot, VectorXd& q, Ve
     // Joint space errors
     VectorXd e_q = q_d - q;           // Position error
     VectorXd e_dq = dq_d - dq;        // Velocity error
-
+    
+    // Update integral error (accumulate position error over time)
+    integral_error += e_q * time_period;
 
     // Control input
-    // u = mass_matrix * ddq_d + coriolis_matrix * dq + gravity_matrix + K_joint * e_q + D_joint * e_dq;
-    u = mass_matrix * ddq_d + coriolis_matrix * dq + gravity_matrix + K_joint * e_q + D_joint * e_dq;
-    u[6] = K_joint.diagonal()[6] * e_q[6] + D_joint.diagonal()[6] * e_dq[6];
+    // u = mass_matrix * ddq_d + coriolis_matrix * dq + gravity_matrix + K_joint * e_q + D_joint * e_dq + K_integral * integral_error;
+    u = mass_matrix * ddq_d + coriolis_matrix * dq + gravity_matrix + K_joint * e_q + D_joint * e_dq + K_integral * integral_error;
+    // u[6] = K_joint.diagonal()[6] * e_q[6] + D_joint.diagonal()[6] * e_dq[6] + K_integral.diagonal()[6] * integral_error[6];
     // u = gravity + K_diag * eq + K_I * integral error (in position)
 
     // Add friction compensation (// remove for KI)
-    friction_compensation(u, dq);
+    // friction_compensation(u, dq);
 
     // Set the torque saturation
     for (int i = 0; i < 7; i++)
@@ -509,12 +515,12 @@ VectorXd Controller::joint_impedance_controller(Dynamics &robot, VectorXd& q, Ve
         }
     }
 
-    std::cout << "Joint torques: ";
-    for (int i = 0; i < u.size(); i++){
-        std::cout << std::fixed << std::setprecision(3) << u[i];
-        if (i < u.size() - 1) std::cout << ", ";
-    }
-    std::cout << std::endl;
+    // std::cout << "Joint torques: ";
+    // for (int i = 0; i < u.size(); i++){
+    //     std::cout << std::fixed << std::setprecision(3) << u[i];
+    //     if (i < u.size() - 1) std::cout << ", ";
+    // }
+    // std::cout << std::endl;
 
     return u;
 }

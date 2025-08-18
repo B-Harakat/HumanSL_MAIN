@@ -30,7 +30,7 @@ namespace Controller {
 
     VectorXd joint_impedance_controller(Dynamics &robot, VectorXd& q, VectorXd& dq, VectorXd& ddq,
                                                       VectorXd& q_d, VectorXd& dq_d, VectorXd& ddq_d,
-                                                      VectorXd& K_joint_diag, 
+                                                      VectorXd& K_joint_diag, VectorXd& K_integral_diag,
                                                       int c_f, double& time_period);
 
     VectorXd chicken_head_controller(Dynamics& robot, 

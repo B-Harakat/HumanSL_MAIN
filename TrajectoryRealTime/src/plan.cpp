@@ -150,7 +150,7 @@ void Gen3Arm::plan_joint(JointTrajectory& trajectory,
     std::unique_ptr<gpmp2::ArmModel> arm_model = createArmModel(base_pose, dh_params_);
     arm_model_logs  = *arm_model;
 
-    // visualizeTrajectoryStatic(current_joint_pos, arm_model_logs, dataset_logs, base_pose);
+    visualizeTrajectoryStatic(current_joint_pos, arm_model_logs, dataset_logs, base_pose);
     // std::cout << "Verify starting condition, press ENTER to proceed with IK solving. \n";
     // std::cin.get();
 
@@ -221,7 +221,7 @@ void Gen3Arm::plan_joint(JointTrajectory& trajectory,
 
     if(counter > 3){ 
             visualizeTrajectory(trajectory.pos, *arm_model, dataset_logs, base_pose);
-            
+            saveTrajectoryResultToYAML(result,"failed_plan");
             throw std::runtime_error((std::stringstream{} << "Could not generate good enough trajectory, best final error: " << best_final_error << "\n").str());
     }
 }

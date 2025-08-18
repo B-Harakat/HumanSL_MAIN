@@ -154,15 +154,17 @@ bool joint_impedance_control_single(k_api::Base::BaseClient* base, k_api::BaseCy
         dq_d_rad = dq_d * (M_PI/180);
         ddq_d_rad = ddq_d * (M_PI/180);
 
-        std::cout << "Measured q: ";
-        for(auto& k : q){std::cout << k << ", ";} 
-        std::cout <<"\nTarget q: ";
-        for(auto& k : q_d_rad){std::cout << k << ", ";} 
-        std::cout << "\n";
+        // std::cout << "Measured q: ";
+        // for(auto& k : q){std::cout << k << ", ";} 
+        // std::cout <<"\nTarget q: ";
+        // for(auto& k : q_d_rad){std::cout << k << ", ";} 
+        // std::cout << "\n";
+        VectorXd K_integral_diag(7);
+        K_integral_diag << 10.0, 10.0, 10.0, 10.0, 5.0, 5.0, 5.0;
         
         // Joint space impedance controller
         u = joint_impedance_controller(robot, q, dq, ddq, q_d_rad, dq_d_rad, ddq_d_rad, 
-                                        K_joint_diag, control_frequency, dt);
+                                        K_joint_diag, K_integral_diag, control_frequency, dt);
 
         // Prepare command - ensure command has proper structure
         base_command.clear_actuators();
@@ -213,14 +215,14 @@ void joint_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::B
                                 Dynamics &robot,
                                 JointTrajectory& trajectory,
                                 gtsam::Pose3& base_frame, 
-                                int control_frequency, std::atomic<bool>& flag, 
+                                int control_frequency, std::atomic<bool>& motion_flag, 
                                 std::atomic<bool>& chicken_flag, std::shared_mutex& vicon_data_mutex, std::string dh_parameters_path,
                                 std::atomic<int>& replan_counter, std::atomic<bool>& replan_triggered,
                                 std::atomic<bool>& new_trajectory_ready, JointTrajectory& new_trajectory,
                                 std::mutex& trajectory_mutex, TrajectoryRecord& record){
     static thread_local int local_counter = 0;
     Eigen::VectorXd K_joint_diag(7);
-    K_joint_diag << 1000,1000,1000,100,100,100,100;
+    K_joint_diag << 350,350,350,100,100,100,100;
 
     // Monitor replan flag state
     static bool previous_replan_state = false;
@@ -249,7 +251,7 @@ void joint_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::B
     auto start_measure = chrono::high_resolution_clock::now();
     // ### end chicken head ### 
     
-    while(flag){
+    while(motion_flag.load()){
 
         auto start_control = chrono::high_resolution_clock::now();
 
@@ -275,8 +277,8 @@ void joint_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::B
             
             robot.setBaseOrientation(base_frame_snapshot.rotation().matrix());
 
-            joint_impedance_control_single(base, base_cyclic, actuator_config, base_feedback, base_command, robot, q_d, dq_d, ddq_d, last_dq, K_joint_diag, q_cur, control_frequency);
-        
+            // joint_impedance_control_single(base, base_cyclic, actuator_config, base_feedback, base_command, robot, q_d, dq_d, ddq_d, last_dq, K_joint_diag, q_cur, control_frequency);
+            joint_position_control_single(base, base_cyclic, base_feedback, base_command,q_d, q_cur);
             record.target_trajectory.push_back(q_d);
             record.actual_trajectory.push_back(q_cur);
         }
@@ -288,14 +290,14 @@ void joint_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::B
             }
             gtsam::Vector start_conf(q_cur);
 
-            std::cout << "initial start_conf: ";
-             for(auto& k : start_conf){std::cout << k << ", ";} 
-            std::cout << "\n";
-            start_conf = start_conf * (M_PI/180);
+            // std::cout << "initial start_conf: ";
+            //  for(auto& k : start_conf){std::cout << k << ", ";} 
+            // std::cout << "\n";
+            // start_conf = start_conf * (M_PI/180);
 
-            std::cout << "radians start_conf: ";
-             for(auto& k : start_conf){std::cout << k << ", ";} 
-            std::cout << "\n";
+            // std::cout << "radians start_conf: ";
+            //  for(auto& k : start_conf){std::cout << k << ", ";} 
+            // std::cout << "\n";
 
             gtsam::Pose3 start_pose = forwardKinematics(dh,start_conf,base_frame_snapshot);
             
@@ -665,15 +667,15 @@ bool chicken_head_control_single(k_api::Base::BaseClient* base, k_api::BaseCycli
       dq[i] = base_feedback.actuators(i).velocity();
     }
 
-    std::cout << "Raw joint angles (deg): ";
-    for(auto& k : q){std::cout<< k <<", ";}
-    std::cout << "\n";
+    // std::cout << "Raw joint angles (deg): ";
+    // for(auto& k : q){std::cout<< k <<", ";}
+    // std::cout << "\n";
 
     shiftAngleInPlace(q);  // Apply angle wrapping in degrees
 
-    std::cout << "Shifted joint angles (deg): ";
-    for(auto& k : q){std::cout<< k <<", ";}
-    std::cout << "\n";
+    // std::cout << "Shifted joint angles (deg): ";
+    // for(auto& k : q){std::cout<< k <<", ";}
+    // std::cout << "\n";
 
     for (int i = 0; i < 7; i++) {
         q[i] = (M_PI/180) * q[i];   // Convert to radians
@@ -682,9 +684,9 @@ bool chicken_head_control_single(k_api::Base::BaseClient* base, k_api::BaseCycli
 
     gtsam::Vector q_gtsam(q); 
 
-    std::cout << "Joint angles (rad): ";
-    for(auto& k : q){std::cout<< k <<", ";}
-    std::cout << "\n";
+    // std::cout << "Joint angles (rad): ";
+    // for(auto& k : q){std::cout<< k <<", ";}
+    // std::cout << "\n";
 
     // Apply the forward kinematics
     // std::tie(p, T_B7) 

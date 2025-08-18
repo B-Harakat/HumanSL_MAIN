@@ -106,9 +106,9 @@ void Dynamics::setBaseOrientation(const Eigen::Matrix3d& R_world_to_base) {
     double det = R_world_to_base.determinant();
     bool orthogonal = (R_world_to_base * R_world_to_base.transpose()).isApprox(Eigen::Matrix3d::Identity(), 1e-6);
     
-    if (!std::abs(det - 1.0) < 1e-6 || !orthogonal) {
-        std::cout << "Warning: Provided matrix is not a valid rotation matrix!" << std::endl;
-    }
+    // if (!std::abs(det - 1.0) < 1e-6 || !orthogonal) {
+    //     std::cout << "Warning: Provided matrix is not a valid rotation matrix!" << std::endl;
+    // }
     
     R_world_to_base_ = R_world_to_base;
     

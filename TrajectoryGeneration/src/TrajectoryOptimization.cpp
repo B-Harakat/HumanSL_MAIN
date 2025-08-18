@@ -25,7 +25,7 @@ TrajectoryResult OptimizeTrajectory::optimizeJointTrajectory(
     double delta_t = total_time_sec / total_time_step;
     
     // GP and optimization parameters
-    gtsam::Matrix Qc = gtsam::Matrix::Identity(7, 7) * 0.05;
+    gtsam::Matrix Qc = gtsam::Matrix::Identity(7, 7);
     auto Qc_model = gtsam::noiseModel::Gaussian::Covariance(Qc);
     double collision_sigma = 0.0005;
     double epsilon_dist = 0.05;
@@ -96,30 +96,14 @@ TrajectoryResult OptimizeTrajectory::optimizeJointTrajectory(
         }
     }
 
-    // auto jerk_noise_model = gtsam::noiseModel::Isotropic::Sigma(7, 1);
-        
-    // // Add jerk penalty factors for consecutive position triplets
-    // for (size_t i = 1; i < total_time_step; ++i) {
-    //     gtsam::Symbol key_pos1('v', i - 1);
-    //     gtsam::Symbol key_pos2('v', i);
-    //     gtsam::Symbol key_pos3('v', i + 1);
-        
-    //     graph.add(JerkPenaltyFactor(
-    //         key_pos1, key_pos2, key_pos3, jerk_noise_model, delta_t));
-    //     factor_keys.push_back("JerkFactor");
-    // }
     // Add workspace constraints for final waypoint if specified
     gtsam::Symbol final_key('x', total_time_step);
     
-    gtsam::Vector6 pose_sigmas;
-    pose_sigmas << 0.01, 0.01, 0.01,  // x, y, z position weights (y is less punished)
-                   0.01, 0.01, 0.01;  // roll, pitch, yaw rotation weights
-    auto workspace_model = gtsam::noiseModel::Diagonal::Sigmas(pose_sigmas);
-    
+    auto workspace_model = gtsam::noiseModel::Isotropic::Sigma(6, 1e-3);
     graph.add(gpmp2::GaussianPriorWorkspacePoseArm(
         final_key, arm_model, 6, target_pose, workspace_model));
     factor_keys.push_back("PoseFactor");
-    
+
     for (size_t i = 0; i < graph.size(); ++i) {
       
         double constraint_error = graph.at(i)->error(init_values);

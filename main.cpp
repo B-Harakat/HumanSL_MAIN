@@ -13,7 +13,7 @@
 #define PORT 10000
 #define PORT_REAL_TIME 10001
 #define ACTUATOR_COUNT 7
-#define JOINT_CONTROL_FREQUENCY 1000
+#define JOINT_CONTROL_FREQUENCY 500
 #define TASK_CONTROL_FREQUENCY 300
 #define GPMP2_TIMESTEPS 50
 
@@ -22,10 +22,12 @@ k_api::Base::BaseClient* g_right_base = nullptr;
 k_api::BaseCyclic::BaseCyclicClient* g_right_base_cyclic = nullptr;
 k_api::Base::BaseClient* g_left_base = nullptr;
 k_api::BaseCyclic::BaseCyclicClient* g_left_base_cyclic = nullptr;
+std::atomic<bool> motion_flag{true};
 
 void cleanup_and_exit() {
     std::cout << "\nPerforming emergency shutdown..." << std::endl;
-    
+    motion_flag.store(false);
+
     // Open gripper
     if (g_right_base_cyclic) {
         try {
@@ -90,8 +92,8 @@ bool plan_action(
     gtsam::Point3& target_info,
     std::vector<double>& q_cur_left,
     std::vector<double>& q_cur_right,
-    std::vector<double>& q_init_right,
     std::vector<double>& q_init_left,
+    std::vector<double>& q_init_right,
     Gen3Arm& right_arm,
     Gen3Arm& left_arm,
     JointTrajectory& left_joint_trajectory,
@@ -139,18 +141,28 @@ bool plan_action(
         switch(trigger_id.load()){
             case 1: // Right arm engages pipe
             {
-                double approach_offset_y = 0.5;
-                double approach_offset_z = 0.12;
+                double approach_offset_y = 0.4;
+                double approach_offset_z = 0.1;
                 double approach_time_sec = 3.0;
 
-                right_arm.make_sdf(tube_info, human_info, true, left_base_frame_snapshot, q_cur_left_snapshot);
-                right_arm.plan_joint(new_joint_trajectory, q_init_right, right_base_frame_snapshot, 
+                right_arm.make_sdf(tube_info_snapshot, human_info_snapshot, true, left_base_frame_snapshot, q_cur_left_snapshot);
+                right_arm.plan_joint(new_joint_trajectory, q_cur_right_snapshot, right_base_frame_snapshot, 
                                     tube_info_snapshot, human_info_snapshot, 
                                     approach_offset_y, approach_offset_z, 
                                     approach_time_sec, GPMP2_TIMESTEPS, JOINT_CONTROL_FREQUENCY);
 
                 visualizeTrajectory(new_joint_trajectory.pos, right_arm.arm_model_logs, right_arm.dataset_logs, right_base_frame_snapshot);
                 saveTrajectoryResultToYAML(right_arm.result_logs,"plan_1");
+                std::cout << "tube pose: ";
+                for(auto& k : tube_info_snapshot.centroid) {std::cout<< k << ", ";}
+                std::cout << "\n";
+
+                std::cout << "fiunal joint pos: ";
+                for(auto& k : new_joint_trajectory.pos.back()) {std::cout<< k << ", ";}
+                std::cout << "\n";
+                gtsam::Vector dummy_vec = new_joint_trajectory.pos.back() * (M_PI/180);
+                gtsam::Pose3 final_pose = forwardKinematics(right_arm.dh_params_, dummy_vec, right_base_frame_snapshot);
+                std::cout << "Final pose: " << final_pose << "\n";
 
                 break;
             }
@@ -168,7 +180,7 @@ bool plan_action(
                             tube_info_snapshot, human_info_snapshot, grasp_offset_y, 
                             grasp_offset_z, grasp_time_sec, 
                             GPMP2_TIMESTEPS, JOINT_CONTROL_FREQUENCY);
-                
+            
                 visualizeTrajectory(new_joint_trajectory.pos, right_arm.arm_model_logs, right_arm.dataset_logs, right_base_frame_snapshot);
                 saveTrajectoryResultToYAML(right_arm.result_logs,"plan_2");
                 
@@ -210,7 +222,7 @@ bool plan_action(
                 double approach_offset_z = 0.12;
                 double approach_time_sec = 3.0;
 
-                left_arm.make_sdf(tube_info, human_info, true, right_base_frame_snapshot, q_cur_right_snapshot);
+                left_arm.make_sdf(tube_info_snapshot, human_info_snapshot, true, right_base_frame_snapshot, q_cur_right_snapshot);
                 left_arm.plan_joint(new_joint_trajectory, q_init_left, left_base_frame_snapshot, 
                                     tube_info_snapshot, human_info_snapshot, 
                                     approach_offset_y, approach_offset_z, 
@@ -492,9 +504,8 @@ int main(){
     std::vector<double> q_cur_right_snapshot; 
     std::vector<double> q_cur_left_snapshot;
 
-    std::atomic<bool> motion_flag;
-    std::atomic<bool> right_chicken_flag;
-    std::atomic<bool> left_chicken_flag;
+    std::atomic<bool> right_chicken_flag{false};
+    std::atomic<bool> left_chicken_flag{false};
 
 
     std::vector<double> q_init_left(7); 
@@ -582,15 +593,24 @@ int main(){
 
     info_thread.detach();
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000)); 
+    std::this_thread::sleep_for(std::chrono::milliseconds(2000)); 
+    
+    // auto control_mode_message = k_api::ActuatorConfig::ControlModeInformation();
+    // control_mode_message.set_control_mode(k_api::ActuatorConfig::ControlMode::POSITION);
+    // for (int id = 1; id < ACTUATOR_COUNT+1; id++)
+    // {
+    //     left_actuator_config->SetControlMode(control_mode_message, id);
+    //     right_actuator_config->SetControlMode(control_mode_message, id);
+    // }
 
+    std::cout << "Resetting gripper pos\n";
     move_gripper(right_base_cyclic, 0);
     move_gripper(left_base_cyclic,  0);
 
     Eigen::VectorXd q_init_right_eigen = Eigen::Map<Eigen::VectorXd>(q_init_right.data(), q_init_right.size());
     Eigen::VectorXd q_init_left_eigen = Eigen::Map<Eigen::VectorXd>(q_init_left.data(), q_init_left.size());
     
-    Eigen::VectorXd q_init_vel; Eigen::VectorXd q_init_acc;
+    Eigen::VectorXd q_init_vel(7); Eigen::VectorXd q_init_acc(7);
     q_init_vel << 0.0,0.0,0.0,0.0,0.0,0.0,0.0;
     q_init_acc << 0.0,0.0,0.0,0.0,0.0,0.0,0.0;
 
@@ -604,18 +624,20 @@ int main(){
 
     // Set actuators in torque mode
     auto control_mode_message = k_api::ActuatorConfig::ControlModeInformation();
-    control_mode_message.set_control_mode(k_api::ActuatorConfig::ControlMode::TORQUE);
+    control_mode_message.set_control_mode(k_api::ActuatorConfig::ControlMode::POSITION);
     for (int id = 1; id < ACTUATOR_COUNT+1; id++)
     {
         left_actuator_config->SetControlMode(control_mode_message, id);
         right_actuator_config->SetControlMode(control_mode_message, id);
     }
 
+    std::cout << "Switching to torque mode and initializing each arm \n";
+
     std::thread right_robot_execution_thread;
     right_robot_execution_thread = std::thread([&]() {
         joint_control_execution(right_base,right_base_cyclic,right_actuator_config, right_base_feedback, 
             right_base_command, right_robot, right_joint_trajectory, 
-            right_base_frame, JOINT_CONTROL_FREQUENCY, 
+            right_base_frame, JOINT_CONTROL_FREQUENCY,
             std::ref(motion_flag), 
             std::ref(right_chicken_flag), std::ref(vicon_data_mutex), dh_params_path,
             std::ref(replan_counter), 
@@ -638,14 +660,38 @@ int main(){
     right_robot_execution_thread.detach();
     left_robot_execution_thread.detach();
 
+    phase_idx.store(1);
+    
+    plan_action(phase_idx, vicon_data_mutex, joint_data_mutex, left_base_frame, right_base_frame,
+                tube_info, human_info, target_info, q_cur_left, q_cur_right, q_init_left, q_init_right, right_arm, left_arm, 
+                left_joint_trajectory, right_joint_trajectory, new_joint_trajectory, trajectory_mutex);
+    
+    std::cin.get();  
+    
+    std::cout << "target pos: ";
+     for(auto& k : right_joint_trajectory.pos.back()){std::cout << k << ", ";} 
+    std::cout << "\n";
 
+    std::cout << "measured pos: ";
+     for(auto& k : q_cur_right){std::cout << k << ", ";} 
+    std::cout << "\n";
+
+    phase_idx.store(2);
+
+    plan_action(phase_idx, vicon_data_mutex, joint_data_mutex, left_base_frame, right_base_frame,
+                tube_info, human_info, target_info, q_cur_left, q_cur_right, q_init_left, q_init_right, right_arm, left_arm, 
+                left_joint_trajectory, right_joint_trajectory, new_joint_trajectory, trajectory_mutex);
+    
+    std::cin.get();   
+    move_gripper(right_base_cyclic, 50);
+    
 
 
     // Insert execution codes here
 
 
 
-
+    while(true);
 
 
 

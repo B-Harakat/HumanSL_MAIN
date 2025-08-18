@@ -62,12 +62,13 @@
 class Gen3Arm : public ViconSDF, public InitializeTrajectory, public OptimizeTrajectory {
 private:
     std::string ip_;
-    DHParameters dh_params_;
+    
     JointLimits pos_limits_;
     JointLimits vel_limits_;
     std::unique_ptr<gpmp2::SignedDistanceField> sdf;
 
 public:
+    DHParameters dh_params_;
     GPMP2_OccupancyGrid dataset_logs;
     gpmp2::ArmModel arm_model_logs;
     TrajectoryResult result_logs;

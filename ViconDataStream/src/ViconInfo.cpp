@@ -25,6 +25,9 @@ void updateTubeInfo(TubeInfo& tube_info, std::vector<MarkerData>& tube){
         result.centroid += p;
     }
     result.centroid /= n;
+
+
+    
     
     Eigen::MatrixXd centered(n, 3);
     for (int i = 0; i < n; ++i) {
@@ -66,6 +69,9 @@ void updateTubeInfo(TubeInfo& tube_info, std::vector<MarkerData>& tube){
     }
     
     result.length = maxProj - minProj;
+
+    // remove when camera is fixed
+    result.centroid[2] += 0.07;
 
     tube_info = result;
     
@@ -141,7 +147,9 @@ void updateTargetInfo(gtsam::Point3& target_info, std::vector<MarkerData>& targe
 
 void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose3& right_base, TubeInfo& tube_info, HumanInfo& human_info, gtsam::Point3& target_info, std::vector<double>& left_conf, std::vector<double>& right_conf, std::string& dh_params_path, std::shared_mutex& vicon_data_mutex, std::shared_mutex& joint_data_mutex){
     
- 
+    static int counter = 0;
+    static std::deque<TubeInfo> tube_info_array;
+
     std::unique_lock<std::shared_mutex> vicon_lock(vicon_data_mutex);
     
 
@@ -151,22 +159,57 @@ void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose
     right_base_data.push_back(vicon.getMarkerPosition("right_base1"));
     right_base_data.push_back(vicon.getMarkerPosition("right_base2"));
     right_base_data.push_back(vicon.getMarkerPosition("right_base3"));
-    right_base_data.push_back(vicon.getMarkerPosition("right_base4"));
+    // right_base_data.push_back(vicon.getMarkerPosition("right_base4"));
 
     left_base_data.push_back(vicon.getMarkerPosition("left_base1"));
     left_base_data.push_back(vicon.getMarkerPosition("left_base2"));
     left_base_data.push_back(vicon.getMarkerPosition("left_base3"));
-    left_base_data.push_back(vicon.getMarkerPosition("left_base4"));
+    // left_base_data.push_back(vicon.getMarkerPosition("left_base4"));
 
 
     std::vector<MarkerData> tube  = vicon.getMarkerPositions("tube");
     std::vector<MarkerData> human = vicon.getMarkerPositions("human");
     std::vector<MarkerData> target= vicon.getMarkerPositions("target");
+    
+    TubeInfo tube_info_snapshot;
 
-    updateTubeInfo(tube_info, tube);
+    updateTubeInfo(tube_info_snapshot, tube);
     updateHumanInfo(human_info, human);
     updateTargetInfo(target_info, target);
 
+    tube_info_array.push_back(tube_info_snapshot);
+
+    if(tube_info_array.size() >= 100){
+        tube_info_array.pop_front();
+        counter++;
+        
+        if(counter == 10){
+            counter = 0;
+        
+
+            // Calculate average tube properties
+            Eigen::Vector3d avg_centroid = Eigen::Vector3d::Zero();
+            Eigen::Vector3d avg_direction = Eigen::Vector3d::Zero();
+            double avg_length = 0.0;
+            
+            
+            for(const auto& tube_sample : tube_info_array) {
+                avg_centroid += tube_sample.centroid;
+                avg_direction += tube_sample.direction;
+                avg_length += tube_sample.length;
+            }
+        
+            avg_centroid /= 100;
+            avg_direction /= 100;
+            avg_direction.normalize();  // Ensure unit vector
+            avg_length /= 100;
+            
+            // Update tube_info with averaged values
+            tube_info.centroid = avg_centroid;
+            tube_info.direction = avg_direction;
+            tube_info.length = avg_length;
+        }
+    }
 
 
     // Check for occlusion in right_base_data
@@ -190,20 +233,22 @@ void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose
 
 
     // Estimate left base pose if not occluded
-    if (!left_base_occluded) {
+    if (!left_base_occluded && !right_base_occluded) {
 
-        gtsam::Pose3 left_base_guess2 = updatePoseInfo2(left_base_data);
+        gtsam::Pose3 left_base_guess2 = updatePoseInfo2(left_base_data, right_base_data.front());
+        gtsam::Pose3 right_base_guess2 = updatePoseInfo2(right_base_data, left_base_data.front());
 
         left_base = left_base_guess2;
-    }
-
-    // Estimate right base pose if not occluded
-    if (!right_base_occluded) {
-
-        gtsam::Pose3 right_base_guess2 = updatePoseInfo2(right_base_data);
-
         right_base = right_base_guess2;
     }
+
+    // // Estimate right base pose if not occluded
+    // if (!right_base_occluded) {
+
+    //     gtsam::Pose3 right_base_guess2 = updatePoseInfo2(right_base_data, left_base_data.front());
+
+    //     right_base = right_base_guess2;
+    // }
 
     // for (auto& marker : tube){
     //     std::cout << "Tube data: \n";
@@ -249,7 +294,7 @@ gtsam::Pose3 updatePoseInfo1(std::vector<MarkerData>& vicon_data, std::string& d
     return base_guess;
 }
 
-gtsam::Pose3 updatePoseInfo2(std::vector<MarkerData>& vicon_data){
+gtsam::Pose3 updatePoseInfo2(std::vector<MarkerData>& vicon_data, MarkerData other_arm_base_1){
 
     std::vector<Eigen::Vector3d> base_positions;
 
@@ -257,11 +302,12 @@ gtsam::Pose3 updatePoseInfo2(std::vector<MarkerData>& vicon_data){
         base_positions.push_back(Eigen::Vector3d(
     marker.x/1000, marker.y/1000, marker.z/1000));
     }
+    Eigen::Vector3d other_arm_point(other_arm_base_1.x/1000, other_arm_base_1.y/1000, other_arm_base_1.z/1000);
 
     gtsam::Pose3 base_guess =
         calculateFramePose(base_positions[0],
         base_positions[1], base_positions[2], 
-        base_positions[3], 0.133, false);
+        other_arm_point, 0.133, false);
 
     return base_guess;
 }

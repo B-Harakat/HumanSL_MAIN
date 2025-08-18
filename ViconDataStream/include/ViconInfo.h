@@ -37,7 +37,7 @@ void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose
 
 gtsam::Pose3 updatePoseInfo1(std::vector<MarkerData>& vicon_data, std::string& dh_params_path, std::vector<double>& joint_conf);
 
-gtsam::Pose3 updatePoseInfo2(std::vector<MarkerData>& vicon_data);
+gtsam::Pose3 updatePoseInfo2(std::vector<MarkerData>& vicon_data, MarkerData other_arm_base_1);
 
 gtsam::Pose3 calculateFramePose(const Eigen::Vector3d& world_p1, 
                                const Eigen::Vector3d& world_p2,

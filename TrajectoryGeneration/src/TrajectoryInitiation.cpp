@@ -383,8 +383,8 @@ gtsam::Values InitializeTrajectory::initJointTrajectoryFromVicon(
                 end_confs.push_back(end_conf);
                 
                 // Print pose information for this successful solution
-                gtsam::Point3 pos = target_pose.translation();
-                gtsam::Matrix3 rot = target_pose.rotation().matrix();
+                // gtsam::Point3 pos = target_pose.translation();
+                // gtsam::Matrix3 rot = target_pose.rotation().matrix();
             
                 success_count++;
                 double magnitude = (end_conf - start_conf).norm();
