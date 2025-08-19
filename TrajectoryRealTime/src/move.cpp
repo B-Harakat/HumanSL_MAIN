@@ -215,7 +215,7 @@ void joint_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::B
                                 Dynamics &robot,
                                 JointTrajectory& trajectory,
                                 gtsam::Pose3& base_frame, 
-                                int control_frequency, std::atomic<bool>& motion_flag, 
+                                int control_frequency, std::atomic<bool>& motion_flag, std::atomic<bool>& execution_ongoing_flag,
                                 std::atomic<bool>& chicken_flag, std::shared_mutex& vicon_data_mutex, std::string dh_parameters_path,
                                 std::atomic<int>& replan_counter, std::atomic<bool>& replan_triggered,
                                 std::atomic<bool>& new_trajectory_ready, JointTrajectory& new_trajectory,
@@ -277,8 +277,8 @@ void joint_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::B
             
             robot.setBaseOrientation(base_frame_snapshot.rotation().matrix());
 
-            // joint_impedance_control_single(base, base_cyclic, actuator_config, base_feedback, base_command, robot, q_d, dq_d, ddq_d, last_dq, K_joint_diag, q_cur, control_frequency);
-            joint_position_control_single(base, base_cyclic, base_feedback, base_command,q_d, q_cur);
+            joint_impedance_control_single(base, base_cyclic, actuator_config, base_feedback, base_command, robot, q_d, dq_d, ddq_d, last_dq, K_joint_diag, q_cur, control_frequency);
+            // joint_position_control_single(base, base_cyclic, base_feedback, base_command,q_d, q_cur);
             record.target_trajectory.push_back(q_d);
             record.actual_trajectory.push_back(q_cur);
         }
@@ -286,7 +286,7 @@ void joint_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::B
 
             {
             std::shared_lock<std::shared_mutex> vicon_lock(vicon_data_mutex);
-            base_frame_snapshot = base_frame;
+                base_frame_snapshot = base_frame;
             }
             gtsam::Vector start_conf(q_cur);
 
@@ -361,22 +361,20 @@ void joint_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::B
             }
         }
                
-        // // Original trajectory completion logic
-        // size_t trajectory_size = trajectory.pos.size();
+        // Original trajectory completion logic
+        size_t trajectory_size = trajectory.pos.size();
         
-        // if(trajectory_size == 1){
-        //     local_counter += 1;
-        //     // std::cout << local_counter << "\n";
-        // }
-        // else{
-        //     local_counter = 0;
-        // }
+        if(trajectory_size == 1){
+            local_counter += 1;
+            // std::cout << local_counter << "\n";
+        }
+        else{
+            local_counter = 0;
+        }
 
-        // if(local_counter >= 1000){
-        //     flag.store(false);
-        //     local_counter = 0;
-        //     break;
-        // }
+        if(local_counter >= 500){
+            execution_ongoing_flag.store(false);
+        }
 
         auto end_control = chrono::high_resolution_clock::now();
         auto run_time = chrono::duration<double, milli>(end_control - start_control).count();

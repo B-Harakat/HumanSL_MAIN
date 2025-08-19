@@ -157,6 +157,8 @@ void Gen3Arm::plan_joint(JointTrajectory& trajectory,
     gtsam::Vector start_conf = Eigen::Map<const Eigen::VectorXd>(
         current_joint_pos.data(), current_joint_pos.size()) * M_PI / 180.0;
 
+    gtsam::Vector start_vel = gtsam::Vector::Zero(7);
+
 
     gtsam::Pose3 best_end_pose;  // Will be filled with the best pose found by IK search
     
@@ -193,7 +195,7 @@ void Gen3Arm::plan_joint(JointTrajectory& trajectory,
             auto optimization_start_time = std::chrono::high_resolution_clock::now();
             result = optimizeJointTrajectory(
                                     *arm_model, *sdf, init_values, best_end_pose, 
-                                    start_conf, pos_limits_, vel_limits_, 
+                                    start_conf, start_vel, pos_limits_, vel_limits_, 
                                     total_time_step, total_time_sec, dt);
             
             auto optimization_end_time = std::chrono::high_resolution_clock::now();
@@ -248,6 +250,8 @@ void Gen3Arm::plan_joint(JointTrajectory& trajectory,
     gtsam::Vector dummy_conf = Eigen::Map<const Eigen::VectorXd>(
         target_joint_pos.data(), target_joint_pos.size()) * M_PI / 180.0;
 
+    gtsam::Vector start_vel = gtsam::Vector::Zero(7);
+
     std::vector<gtsam::Pose3> joint_poses;
     arm_model->fk_model().forwardKinematics(dummy_conf, {}, joint_poses);
     gtsam::Pose3 target_pose = joint_poses.back();
@@ -259,7 +263,7 @@ void Gen3Arm::plan_joint(JointTrajectory& trajectory,
     double dt = 1.0/control_frequency;
     TrajectoryResult result = optimizeJointTrajectory(
                             *arm_model, *sdf, init_values, target_pose, 
-                            start_conf, pos_limits_, vel_limits_, 
+                            start_conf, start_vel, pos_limits_, vel_limits_, 
                             total_time_step, total_time_sec, dt);
     
     result_logs = result;
@@ -269,16 +273,15 @@ void Gen3Arm::plan_joint(JointTrajectory& trajectory,
 }
 
 
-void Gen3Arm::replan_joint(
+bool Gen3Arm::replan_joint(
                      const JointTrajectory& old_trajectory,
                      JointTrajectory& new_trajectory, 
-                     std::vector<double>& current_joint_pos, 
                      const gtsam::Pose3& base_pose, 
                      const TubeInfo& tube_info,
                      const HumanInfo& human_info,
                      gtsam::Pose3& target_pose,
                      double offset_from_human_y,
-                     double offset_from_tube_z, 
+                     double offset_from_tube_z,
                      double total_time_sec, 
                      size_t total_time_step,
                      int control_frequency) {
@@ -287,59 +290,26 @@ void Gen3Arm::replan_joint(
     
     // Step 1: Extract 3 consecutive states starting from timestep 100 (200ms)
     const size_t future_timestep = static_cast<size_t>(240/(1000.0/control_frequency));  // 250ms / 1ms = 250 timesteps
-    std::vector<gtsam::Vector> extracted_pos;
-    std::vector<gtsam::Vector> extracted_vel;
+
+    Eigen::VectorXd pos_deg = old_trajectory.pos[old_trajectory.pos.size()-1];
+    Eigen::VectorXd vel_deg = old_trajectory.vel[old_trajectory.pos.size()-1];
     
-    // Extract 3 consecutive states starting from 200ms
-    for (size_t i = 0; i < 3; ++i) {
+    
+    std::cout<<"original old_trajectory at change: ";
+    for(auto& k : pos_deg){ std::cout << std::round(k*100)/100 << ", ";}
+    std::cout<< "\n";
 
-        if (old_trajectory.pos.size() < future_timestep + 3){
-
-            Eigen::VectorXd pos_deg = old_trajectory.pos[old_trajectory.pos.size()-1];
-            Eigen::VectorXd vel_deg = old_trajectory.vel[old_trajectory.pos.size()-1];
-            
-            if(i == 0){
-                std::cout<<"original old_trajectory at change: ";
-                for(auto& k : pos_deg){ std::cout << std::round(k*100)/100 << ", ";}
-            }
-            
-            gtsam::Vector pos_rad = pos_deg * M_PI / 180.0;
-            gtsam::Vector vel_rad = vel_deg * M_PI / 180.0;
-            
-            extracted_pos.push_back(pos_rad);
-            extracted_vel.push_back(vel_rad);
-        }
-        else{
-
-            size_t idx = future_timestep + i;
-        
-            // Convert from degrees to radians and from Eigen::VectorXd to gtsam::Vector
-            Eigen::VectorXd pos_deg = old_trajectory.pos[idx];
-            Eigen::VectorXd vel_deg = old_trajectory.vel[idx];
-
-            if(i == 0){
-                std::cout<<"original old_trajectory at change: ";
-                for(auto& k : pos_deg){ std::cout << std::round(k*100)/100 << ", ";}
-            }
-            
-            gtsam::Vector pos_rad = pos_deg * M_PI / 180.0;
-            gtsam::Vector vel_rad = vel_deg * M_PI / 180.0;
-            
-            extracted_pos.push_back(pos_rad);
-            extracted_vel.push_back(vel_rad);
-            
-            std::cout << "Extracted timestep " << idx << " (t=" << (idx * (1.0/control_frequency) * 1000) << "ms)" << std::endl;
-        }
-    }
+    gtsam::Vector extracted_pos = pos_deg * M_PI / 180.0;
+    gtsam::Vector extracted_vel = vel_deg * M_PI / 180.0;
     
     std::unique_ptr<gpmp2::ArmModel> arm_model = createArmModel(base_pose, dh_params_);
     arm_model_logs  = *arm_model;
 
     // Visualize the starting condition (from extracted state)
-    std::vector<double> extracted_start_deg;
-    for (int i = 0; i < extracted_pos[0].size(); ++i) {
-        extracted_start_deg.push_back(extracted_pos[0](i) * 180.0 / M_PI);
-    }
+    // std::vector<double> extracted_start_deg;
+    // for (int i = 0; i < extracted_pos[0].size(); ++i) {
+    //     extracted_start_deg.push_back(extracted_pos[0](i) * 180.0 / M_PI);
+    // }
     // visualizeTrajectoryStatic(extracted_start_deg, arm_model_logs, dataset_logs, base_pose);
     // std::cout << "Verify starting condition from 200ms future state, press ENTER to proceed with re-planning. \n";
     // std::cin.get();
@@ -354,44 +324,49 @@ void Gen3Arm::replan_joint(
     while(true){
 
         // Step 2: Use re_initializeTrajectory with the extracted states
-        gtsam::Values init_values = reInitJointTrajectoryFromVicon(extracted_pos, extracted_vel, tube_info, human_info, 
-                                                        offset_from_human_y, offset_from_tube_z,
-                                                        base_pose, total_time_step, target_pose);
-        std::cout << "Best Pose: " << target_pose << std::endl;
+        gtsam::Values init_values = initJointTrajectoryFromVicon(extracted_pos, tube_info, human_info, 
+                                                         offset_from_human_y, offset_from_tube_z,
+                                                         base_pose, total_time_step, target_pose);
         
         double dt = 1.0 / control_frequency;
         // Step 3: Use re_optimizeTrajectory with the extracted states
-        result = reOptimizeJointTrajectory(
+        result = optimizeJointTrajectory(
                                 *arm_model, *sdf, init_values, target_pose, 
                                 extracted_pos, extracted_vel, pos_limits_, vel_limits_, 
                                 total_time_step, total_time_sec, dt);
 
-        if(result.final_error < 9000.0) break;
+        if(result.final_error < 1000.0) break;
 
         
         best_final_error = (best_final_error > result.final_error) ? result.final_error : best_final_error;
         
-        if(counter > 3) break;
+        if(counter > 10) break;
         
         counter++;
     }
+
+    std::cout << "Best Pose: " << target_pose << std::endl;
+
     result_logs = result;
 
     saveTrajectoryResultToYAML(result_logs,"replanned");
-    if(counter > 3) 
-            throw std::runtime_error((std::stringstream{} << "Replan Failed, best final error: " << best_final_error << "\n").str());
+
+    if(counter > 10) return false;
+            
     
     // Step 4: Convert to trajectory starting from t=0 (the trajectory begins with the 200ms future state)
     new_trajectory = convertTrajectory<JointTrajectory>(result, dt); 
     
     std::cout << "Replan completed. New trajectory starts from 200ms future state but at t=0." << std::endl;
+
+    return true;
 }
 
 void Gen3Arm::check_replan(const Eigen::VectorXd& trajectory_last_pos,
                           const gtsam::Pose3& base_pose,
                           const gtsam::Pose3& target_pose,
                           const TubeInfo& tube_info, 
-                          std::atomic<int>& phase_idx, std::shared_mutex& vicon_data_mutex,
+                          std::shared_mutex& vicon_data_mutex,
                           std::atomic<bool>& check_replan_flag, std::atomic<bool>& execution_ongoing_flag) {
     
     std::cout << "Starting check_replan() monitoring..." << std::endl;
@@ -421,68 +396,48 @@ void Gen3Arm::check_replan(const Eigen::VectorXd& trajectory_last_pos,
         // Calculate end pose using forward kinematics
         gtsam::Pose3 current_end_pose = forward_kinematics(
             const_cast<gtsam::Pose3&>(base_pose), final_joint_pos_vec);
-        
-        // Calculate position and rotation differences
-        if(phase_idx.load()==1){
-            gtsam::Point3 pos_diff = current_end_pose.translation() - target_pose.translation();
-            double position_error = pos_diff.norm(); 
-            
-            // Calculate rotation difference (angle between rotations)
-            gtsam::Rot3 rot_diff = current_end_pose.rotation().between(target_pose.rotation());
-            double rotation_error = gtsam::Rot3::Logmap(rot_diff).norm();
-            
-            // Add current errors to rolling average deques
-            position_errors.push_back(position_error);
-            rotation_errors.push_back(rotation_error);
 
-            position_threshold = 0.05; // 5cm average position difference
-            rotation_threshold = 0.1;  // ~5.7 degrees average rotation difference (in radians)
-        }
-
-        if(phase_idx.load()==3){
-            // Thread-safe extraction of tube_info to snapshot
-            TubeInfo tube_info_snapshot;
-            {
-                std::shared_lock<std::shared_mutex> vicon_lock(vicon_data_mutex);
-                tube_info_snapshot = tube_info;
-            }
-            
-            // Extract y-position of current end pose
-            double current_y = current_end_pose.translation().y();
-            
-            // Find point on tube with same y-position using centroid and direction
-            // Point on tube axis: P = centroid + t * direction
-            // For same y-position: centroid.y + t * direction.y = current_y
-            // Solve for t: t = (current_y - centroid.y) / direction.y
-            double t = (current_y - tube_info_snapshot.centroid.y()) / tube_info_snapshot.direction.y();
-            Eigen::Vector3d closest_tube_point = tube_info_snapshot.centroid + t * tube_info_snapshot.direction;
-            
-            // Calculate distance between current_end_pose and closest point on tube
-            gtsam::Point3 current_pos = current_end_pose.translation();
-            Eigen::Vector3d current_pos_eigen(current_pos.x(), current_pos.y(), current_pos.z());
-            double position_error = (current_pos_eigen - closest_tube_point).norm();
-            
-            // Calculate normal distance between z-axis and tube axis
-            // Get z-axis of current end pose
-            gtsam::Point3 z_axis_gtsam = current_end_pose.rotation().column(2);
-            Eigen::Vector3d z_axis_current(z_axis_gtsam.x(), z_axis_gtsam.y(), z_axis_gtsam.z());
-            
-            // Calculate normal distance between the two lines (z-axis and tube axis)
-            // For two lines with directions d1, d2 and points p1, p2:
-            // normal_distance = |(p2-p1) · (d1 × d2)| / ||d1 × d2||
-            Eigen::Vector3d pos_diff = current_pos_eigen - closest_tube_point;
-            Eigen::Vector3d cross_product = z_axis_current.cross(tube_info_snapshot.direction);
-            double rotation_error = std::abs(pos_diff.dot(cross_product)) / cross_product.norm();
-            
-            // Add current errors to rolling average deques
-            position_errors.push_back(position_error);
-            rotation_errors.push_back(rotation_error);
-
-            position_threshold = 0.15; // 20cm average position difference
-            rotation_threshold = 0.04;  // 5cm average normal distance between axes
+        // Thread-safe extraction of tube_info to snapshot
+        TubeInfo tube_info_snapshot;
+        {
+            std::shared_lock<std::shared_mutex> vicon_lock(vicon_data_mutex);
+            tube_info_snapshot = tube_info;
         }
         
+        // Extract y-position of current end pose
+        double current_y = current_end_pose.translation().y();
         
+        // Find point on tube with same y-position using centroid and direction
+        // Point on tube axis: P = centroid + t * direction
+        // For same y-position: centroid.y + t * direction.y = current_y
+        // Solve for t: t = (current_y - centroid.y) / direction.y
+        double t = (current_y - tube_info_snapshot.centroid.y()) / tube_info_snapshot.direction.y();
+        Eigen::Vector3d closest_tube_point = tube_info_snapshot.centroid + t * tube_info_snapshot.direction;
+        
+        // Calculate distance between current_end_pose and closest point on tube
+        gtsam::Point3 current_pos = current_end_pose.translation();
+        Eigen::Vector3d current_pos_eigen(current_pos.x(), current_pos.y(), current_pos.z());
+        double position_error = (current_pos_eigen - closest_tube_point).norm();
+        
+        // Calculate normal distance between z-axis and tube axis
+        // Get z-axis of current end pose
+        gtsam::Point3 z_axis_gtsam = current_end_pose.rotation().column(2);
+        Eigen::Vector3d z_axis_current(z_axis_gtsam.x(), z_axis_gtsam.y(), z_axis_gtsam.z());
+        
+        // Calculate normal distance between the two lines (z-axis and tube axis)
+        // For two lines with directions d1, d2 and points p1, p2:
+        // normal_distance = |(p2-p1) · (d1 × d2)| / ||d1 × d2||
+        Eigen::Vector3d pos_diff = current_pos_eigen - closest_tube_point;
+        Eigen::Vector3d cross_product = z_axis_current.cross(tube_info_snapshot.direction);
+        double rotation_error = std::abs(pos_diff.dot(cross_product)) / cross_product.norm();
+        
+        // Add current errors to rolling average deques
+        position_errors.push_back(position_error);
+        rotation_errors.push_back(rotation_error);
+
+        position_threshold = 0.20; // 20cm average position difference
+        rotation_threshold = 0.04;  // 5cm average normal distance between axes
+    
         // Maintain rolling window size
         if (position_errors.size() > rolling_window_size) {
             position_errors.pop_front();
@@ -531,19 +486,14 @@ void Gen3Arm::check_replan(const Eigen::VectorXd& trajectory_last_pos,
 
 void Gen3Arm::replan(JointTrajectory& current_trajectory,
                     JointTrajectory& new_trajectory,
-                    const gtsam::Pose3& base_pose,
+                    gtsam::Pose3& base_pose,
                     gtsam::Pose3& target_pose,
                     std::shared_mutex& vicon_data_mutex,
-                    std::shared_mutex& joint_data_mutex,
                     std::mutex& trajectory_mutex,
                     std::atomic<bool>& replan_triggered,
                     std::atomic<bool>& new_trajectory_ready,
                     std::atomic<bool>& execution_ongoing_flag,
-                    std::atomic<int>& phase_idx,
-                    const TubeInfo& tube_info,
-                    const HumanInfo& human_info,
-                    const std::vector<double>& q_cur,
-                    double offset_from_human_y, double offset_from_tube_z, 
+                    HumanInfo& human_info, TubeInfo& tube_info,
                     size_t total_time_step, int control_frequency
                 ) {
     
@@ -552,7 +502,6 @@ void Gen3Arm::replan(JointTrajectory& current_trajectory,
     // Static flag to prevent multiple concurrent replanning
     static std::atomic<bool> replanning_in_progress{false};
   
-
     while (execution_ongoing_flag.load()) {
         // Only proceed if not already replanning and replan hasn't been triggered
         if (!replanning_in_progress.load() && !replan_triggered.load()) {
@@ -570,7 +519,7 @@ void Gen3Arm::replan(JointTrajectory& current_trajectory,
             std::cout << "last pos: ";
             for(auto& k : trajectory_last_pos){ std::cout << std::round(k*100)/100 << ", ";}
             std::cout << "\n";
-            check_replan(trajectory_last_pos, base_pose, target_pose, tube_info, phase_idx, vicon_data_mutex, check_replan_flag, execution_ongoing_flag);
+            check_replan(trajectory_last_pos, base_pose, target_pose, tube_info, vicon_data_mutex, check_replan_flag, execution_ongoing_flag);
               
             
             // If replanning is needed
@@ -588,23 +537,15 @@ void Gen3Arm::replan(JointTrajectory& current_trajectory,
                 TubeInfo tube_info_snapshot;
                 HumanInfo human_info_snapshot;
                 gtsam::Pose3 base_pose_snapshot;
-                std::vector<double> q_cur_snapshot;
-                JointTrajectory trajectory_snapshot;
-                double remaining_time_sec;
-                
                 {
                     std::shared_lock<std::shared_mutex> vicon_lock(vicon_data_mutex);
                     tube_info_snapshot = tube_info;
                     human_info_snapshot = human_info;
                     base_pose_snapshot = base_pose;
                 }
-                
-                {
-                    std::shared_lock<std::shared_mutex> joint_lock(joint_data_mutex);
-                    q_cur_snapshot = q_cur;
 
-                }
-
+                JointTrajectory trajectory_snapshot;
+                double remaining_time_sec;
                 {
                     std::lock_guard<std::mutex> lock(trajectory_mutex);
                     trajectory_snapshot = current_trajectory;
@@ -614,29 +555,28 @@ void Gen3Arm::replan(JointTrajectory& current_trajectory,
                 }
                 
                 std::cout << "Calling replan_joint() with snapshot data..." << std::endl;
-                
+              
                 // Generate new trajectory (this takes ~200ms)
-                replan_joint(
+                if(replan_joint(
                     trajectory_snapshot,
                     new_trajectory,
-                    q_cur_snapshot,
                     base_pose_snapshot,
                     tube_info_snapshot,
                     human_info_snapshot,
                     target_pose,
-                    offset_from_human_y, offset_from_tube_z,  // offset parameters
+                    0.5, 0.12,  // offset parameters
                     remaining_time_sec, total_time_step, control_frequency    // time and timestep parameters
-                );
-
-                std::cout << "New trajectory generated successfully." << std::endl;
-                
-                // Signal that new trajectory is ready
-                new_trajectory_ready.store(true);
-                
-                std::cout << "Replanning cycle completed, ready for next replan." << std::endl;
-                replanning_in_progress.store(false);
-                
-                visualizeTrajectory(new_trajectory.pos, arm_model_logs, dataset_logs, base_pose_snapshot);
+                )){
+                    std::cout << "New trajectory generated successfully." << std::endl;
+                    
+                    // Signal that new trajectory is ready
+                    new_trajectory_ready.store(true);
+                    
+                    std::cout << "Replanning cycle completed, ready for next replan." << std::endl;
+                    replanning_in_progress.store(false);
+                    
+                    visualizeTrajectory(new_trajectory.pos, arm_model_logs, dataset_logs, base_pose_snapshot);
+                }
             } 
         }
         
@@ -707,18 +647,24 @@ void Gen3Arm::plan_task(JointTrajectory& trajectory,
     while(true){
 
             std::deque<gtsam::Pose3> pose_trajectory;
-
+            gtsam::Values init_values;
             auto init_start_time = std::chrono::high_resolution_clock::now();
-
-            gtsam::Values init_values = initTaskSpaceTrajectory(start_pose, end_pose, base_pose, start_conf, pose_trajectory,
-                                                                    percentage, height, total_time_step); 
+            try{
+                init_values = 
+                        initTaskSpaceTrajectory(start_pose, end_pose, 
+                                base_pose, start_conf, pose_trajectory,
+                                    percentage, height, total_time_step); 
                                                                     
-            
+            }
+            catch(const std::exception& e){
+                continue;
+            }
+
             auto init_end_time = std::chrono::high_resolution_clock::now();
             auto initiation_duration = std::chrono::duration_cast<std::chrono::milliseconds>(init_end_time - init_start_time);
             total_initiation_duration += initiation_duration;
                                                 
-            std::cout << "Best Pose: " << best_end_pose << "\n";
+            std::cout << "Final Pose: " << pose_trajectory.back() << "\n";
             // Use the actual best pose found by our IK search (not a temporary pose)
             
             auto optimization_start_time = std::chrono::high_resolution_clock::now();
@@ -731,12 +677,11 @@ void Gen3Arm::plan_task(JointTrajectory& trajectory,
             auto optimization_duration = std::chrono::duration_cast<std::chrono::milliseconds>(optimization_end_time - optimization_start_time);
             total_optimization_duration += optimization_duration;
 
-            if(result.final_error < 9000.0) break;
+            if(result.final_error < 1000.0) break;
 
             counter++;
             best_final_error = (best_final_error > result.final_error) ? result.final_error : best_final_error;
-            if(counter > 3) break;
-        
+            if(counter > 20) break;
     }
 
     

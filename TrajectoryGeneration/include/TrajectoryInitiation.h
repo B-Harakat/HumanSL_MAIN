@@ -63,17 +63,6 @@ public:
                                         gtsam::Pose3& best_end_pose, bool tune_pose = true);
 
     
-    gtsam::Values reInitJointTrajectoryFromVicon(
-                                        const std::vector<gtsam::Vector>& extracted_pos,
-                                        const std::vector<gtsam::Vector>& extracted_vel,
-                                        const TubeInfo& tube_info,
-                                        const HumanInfo& human_info,
-                                        double offset_from_human_y,
-                                        double offset_from_tube_z,
-                                        const gtsam::Pose3& base_pose,
-                                        const size_t total_time_step,
-                                        gtsam::Pose3& best_end_pose);
-    
     std::tuple<std::deque<Eigen::VectorXd>, std::deque<Eigen::VectorXd>, std::deque<Eigen::VectorXd>> 
         initTaskSpaceTrajectory(const gtsam::Pose3& start_pose,
                         const gtsam::Pose3& end_pose,

@@ -128,44 +128,42 @@ public:
                      int control_frequency = 1000);
 
     // Replan joint space trajectory starting from 200ms future state
-    void replan_joint(const JointTrajectory& old_trajectory,
-                    JointTrajectory& new_trajectory, 
-                    std::vector<double>& current_joint_pos, 
-                    const gtsam::Pose3& base_pose, 
-                    const TubeInfo& tube_info,
-                    const HumanInfo& human_info,
-                    gtsam::Pose3& target_pose,
-                    double offset_from_human_y,
-                    double offset_from_tube_z, 
-                    double total_time_sec, 
-                    size_t total_time_step,
-                    int control_frequency = 1000);
+
+    bool replan_joint(const JointTrajectory& old_trajectory,
+                     JointTrajectory& new_trajectory, 
+                     const gtsam::Pose3& base_pose, 
+                     const TubeInfo& tube_info,
+                     const HumanInfo& human_info,
+                     gtsam::Pose3& target_pose,
+                     double offset_from_human_y,
+                     double offset_from_tube_z,
+                     double total_time_sec, 
+                     size_t total_time_step,
+                     int control_frequency);
+                    
 
     // Check if replanning is needed by monitoring end pose deviation
     void check_replan(const Eigen::VectorXd& trajectory_last_pos,
                           const gtsam::Pose3& base_pose,
                           const gtsam::Pose3& target_pose,
                           const TubeInfo& tube_info, 
-                          std::atomic<int>& phase_idx, std::shared_mutex& vicon_data_mutex,
+                          std::shared_mutex& vicon_data_mutex,
                           std::atomic<bool>& check_replan_flag, std::atomic<bool>& execution_ongoing_flag);
 
+                          
     // Thread-safe replanning method for continuous monitoring and trajectory replacement
     void replan(JointTrajectory& current_trajectory,
-                JointTrajectory& new_trajectory,
-                const gtsam::Pose3& base_pose,
-                gtsam::Pose3& target_pose,
-                std::shared_mutex& vicon_data_mutex,
-                std::shared_mutex& joint_data_mutex,
-                std::mutex& trajectory_mutex,
-                std::atomic<bool>& replan_triggered,
-                std::atomic<bool>& new_trajectory_ready,
-                std::atomic<bool>& execution_ongoing_flag,
-                std::atomic<int>& phase_idx,
-                const TubeInfo& tube_info,
-                const HumanInfo& human_info,
-                const std::vector<double>& q_cur,
-                double offset_from_human_y, double offset_from_tube_z, 
-                size_t total_time_step, int control_frequency = 1000);
+                    JointTrajectory& new_trajectory,
+                    gtsam::Pose3& base_pose,
+                    gtsam::Pose3& target_pose,
+                    std::shared_mutex& vicon_data_mutex,
+                    std::mutex& trajectory_mutex,
+                    std::atomic<bool>& replan_triggered,
+                    std::atomic<bool>& new_trajectory_ready,
+                    std::atomic<bool>& execution_ongoing_flag,
+                    HumanInfo& human_info, TubeInfo& tube_info,
+                    size_t total_time_step, int control_frequency
+                );
 
     // Plan task space trajectory
     void plan_task(TaskTrajectory& trajectory, 

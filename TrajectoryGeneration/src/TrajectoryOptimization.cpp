@@ -8,6 +8,7 @@ TrajectoryResult OptimizeTrajectory::optimizeJointTrajectory(
     const gtsam::Values& init_values,
     const gtsam::Pose3& target_pose,
     const gtsam::Vector& start_config,
+    const gtsam::Vector& start_vel,
     const JointLimits& pos_limits,
     const JointLimits& vel_limits,
     const size_t total_time_step,
@@ -32,7 +33,6 @@ TrajectoryResult OptimizeTrajectory::optimizeJointTrajectory(
     auto pose_fix_model = gtsam::noiseModel::Isotropic::Sigma(7, 0.0005);
     auto vel_fix_model = gtsam::noiseModel::Isotropic::Sigma(7, 0.001);
     
-    gtsam::Vector start_vel = gtsam::Vector::Zero(7);
     gtsam::Vector end_vel = gtsam::Vector::Zero(7);
 
     gtsam::Matrix self_collision_data(3, 4);  // 3 checks, 4 columns each
@@ -244,8 +244,8 @@ TrajectoryResult OptimizeTrajectory::optimizeTaskTrajectory(
     }
     
     gtsam::Vector6 pose_sigmas;
-    pose_sigmas << 0.01, 1, 0.01,  // x, y, z position weights (y is less punished)
-                   0.01, 0.01, 0.01;  // roll, pitch, yaw rotation weights
+    pose_sigmas << 0.01, 0.01, 0.01,  // x, y, z position weights (y is less punished)
+                   0.01, 1, 0.01;  // roll, pitch, yaw rotation weights
     auto workspace_model = gtsam::noiseModel::Diagonal::Sigmas(pose_sigmas);
     for(size_t i = 0; i <= total_time_step; i++){
         gtsam::Symbol key_pos('x', i);
@@ -298,7 +298,6 @@ TrajectoryResult OptimizeTrajectory::optimizeTaskTrajectory(
 
     return trajectory_result;
 }
-
 
 
 std::pair<std::vector<gtsam::Vector>, std::vector<gtsam::Vector>> OptimizeTrajectory::densifyTrajectory(

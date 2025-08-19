@@ -493,12 +493,32 @@ VectorXd Controller::joint_impedance_controller(Dynamics &robot, VectorXd& q, Ve
     VectorXd e_q = q_d - q;           // Position error
     VectorXd e_dq = dq_d - dq;        // Velocity error
     
+    // Apply error saturation filter (±5 degrees = ±0.0873 radians)
+    const double error_saturation = 3.0 * M_PI / 180.0;  // 5 degrees in radians
+    for (int i = 0; i < e_q.size(); i++) {
+        if (e_q[i] > error_saturation) {
+            e_q[i] = error_saturation;
+        } else if (e_q[i] < -error_saturation) {
+            e_q[i] = -error_saturation;
+        }
+    }
+    
+    // Apply deadband filter (0.2 degrees = 0.00349 radians)
+    const double deadband = 0.2 * M_PI / 180.0;  // 0.2 degrees in radians
+    for (int i = 0; i < e_q.size(); i++) {
+        if (abs(e_q[i]) < deadband) {
+            e_q[i] = 0.0;
+        }
+    }
+    
     // Update integral error (accumulate position error over time)
     integral_error += e_q * time_period;
 
     // Control input
     // u = mass_matrix * ddq_d + coriolis_matrix * dq + gravity_matrix + K_joint * e_q + D_joint * e_dq + K_integral * integral_error;
-    u = mass_matrix * ddq_d + coriolis_matrix * dq + gravity_matrix + K_joint * e_q + D_joint * e_dq + K_integral * integral_error;
+    // u = mass_matrix * ddq_d + coriolis_matrix * dq + gravity_matrix + K_joint * e_q + D_joint * e_dq + K_integral * integral_error;
+
+    u = gravity_matrix + K_joint * e_q + K_integral * integral_error;
     // u[6] = K_joint.diagonal()[6] * e_q[6] + D_joint.diagonal()[6] * e_dq[6] + K_integral.diagonal()[6] * integral_error[6];
     // u = gravity + K_diag * eq + K_I * integral error (in position)
 

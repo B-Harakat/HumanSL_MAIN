@@ -99,9 +99,12 @@ bool plan_action(
     JointTrajectory& left_joint_trajectory,
     JointTrajectory& right_joint_trajectory,
     JointTrajectory& new_joint_trajectory,
+    gtsam::Pose3& cur_pose_target,
+    std::atomic<bool>& execution_ongoing_flag,
+    std::atomic<bool>& left_chicken_flag,
+    std::atomic<bool>& right_chicken_flag,
     std::mutex& trajectory_mutex
 ) {
-    try {
 
         gtsam::Pose3 left_base_frame_snapshot;
         gtsam::Pose3 right_base_frame_snapshot;
@@ -195,16 +198,20 @@ bool plan_action(
                 double intermediate_point_height = 0.25;
 
                 double move_offset_from_human_max_y = 0.6; // position the gripper furter behind human
-                double move_offset_from_human_mid_x = 0.0; // positive means moving the end pose towards human right
-                double move_offset_from_human_max_z = 0.3;
+                double move_offset_from_human_mid_x = 0.15; // positive means moving the end pose towards human right
+                double move_offset_from_human_max_z = 0.1;
+
+                std::vector<double> std_vec1(right_joint_trajectory.pos.back().data(), right_joint_trajectory.pos.back().data() + right_joint_trajectory.pos.back().size());
+                q_cur_right_snapshot = std_vec1;
+                q_cur_right_snapshot[3] = -85;
+                q_cur_right_snapshot[5] = -60;
+                
                 gtsam::Pose3 start_pose = right_arm.forward_kinematics(right_base_frame_snapshot,q_cur_right_snapshot);
                 gtsam::Pose3 target_pose = right_arm.over_head_pose(human_info_snapshot, start_pose, 
                                                                     move_offset_from_human_max_y, 
                                                                     move_offset_from_human_mid_x, 
                                                                     move_offset_from_human_max_z);
     
-                std::vector<double> std_vec1(right_joint_trajectory.pos.back().data(), right_joint_trajectory.pos.back().data() + right_joint_trajectory.pos.back().size());
-                q_cur_right_snapshot = std_vec1;
 
                 right_arm.make_sdf(tube_info_snapshot, human_info_snapshot, false, left_base_frame_snapshot, q_cur_left_snapshot);
                 right_arm.plan_task(new_joint_trajectory, start_pose, target_pose, 
@@ -214,6 +221,8 @@ bool plan_action(
 
                 visualizeTrajectory(new_joint_trajectory.pos, right_arm.arm_model_logs, right_arm.dataset_logs, right_base_frame_snapshot);
                 saveTrajectoryResultToYAML(right_arm.result_logs,"plan_3");
+                
+                break;
             }
 
             case 4: // Left arm approaches pipe
@@ -316,34 +325,44 @@ bool plan_action(
                 
                 break;
             }
+
+            case 9: // Left arm moves to target
+            {
+                left_chicken_flag.store(true);
+                break;
+            }
         }
         
 
         std::cout << "Pipe approach planned, press Enter to conitnue to execution.";
         std::cin.get();
+        
 
         if(trigger_id.load() == 1 || trigger_id.load() == 2 || trigger_id.load() == 3 || trigger_id.load() == 6 || trigger_id.load() == 7){
+            std::vector<double> cur_conf(new_joint_trajectory.pos.back().data(), new_joint_trajectory.pos.back().data() + new_joint_trajectory.pos.back().size());
+            cur_pose_target = right_arm.forward_kinematics(right_base_frame_snapshot, cur_conf);
+
+            right_chicken_flag.store(false);
+
             std::lock_guard<std::mutex> lock(trajectory_mutex);
             right_joint_trajectory = std::move(new_joint_trajectory);
         }
 
-        if(trigger_id.load() == 4 || trigger_id.load() == 5){
+        if(trigger_id.load() == 4 || trigger_id.load() == 5 || trigger_id.load() == 8){
+            std::vector<double> cur_conf(new_joint_trajectory.pos.back().data(), new_joint_trajectory.pos.back().data() + new_joint_trajectory.pos.back().size());
+            cur_pose_target = left_arm.forward_kinematics(right_base_frame_snapshot, cur_conf);
+
+            left_chicken_flag.store(false);
+
             std::lock_guard<std::mutex> lock(trajectory_mutex);
             left_joint_trajectory = std::move(new_joint_trajectory);
         }
+
+        execution_ongoing_flag.store(true);
+        
         
         return true;  // Success
-    }
-    catch (const std::exception& e) {
-        std::cerr << "Error in rightEngagePhase: " << e.what() << std::endl;
-        return false;  // Failure
-    }
-    catch (...) {
-        std::cerr << "Unknown error in rightEngagePhase" << std::endl;
-        return false;  // Failure
-    }
 }
-
 
 
 int main(){
@@ -463,12 +482,13 @@ int main(){
         return false;
     }
 
-
     // My code starts here
     std::shared_mutex vicon_data_mutex;
     std::shared_mutex joint_data_mutex;
     
     // Thread-safe replanning variables
+    std::atomic<bool> execution_ongoing_flag{false};
+    std::atomic<bool> check_for_replan{false}; 
     std::atomic<bool> replan_triggered{false};
     std::atomic<bool> new_trajectory_ready{false};
     std::atomic<int> replan_counter{0};
@@ -504,9 +524,10 @@ int main(){
     std::vector<double> q_cur_right_snapshot; 
     std::vector<double> q_cur_left_snapshot;
 
+    gtsam::Pose3 target_pose_snapshot; 
+
     std::atomic<bool> right_chicken_flag{false};
     std::atomic<bool> left_chicken_flag{false};
-
 
     std::vector<double> q_init_left(7); 
     q_init_left = {-90,90,-15,45,5,5,-175};  // in deg
@@ -624,7 +645,7 @@ int main(){
 
     // Set actuators in torque mode
     auto control_mode_message = k_api::ActuatorConfig::ControlModeInformation();
-    control_mode_message.set_control_mode(k_api::ActuatorConfig::ControlMode::POSITION);
+    control_mode_message.set_control_mode(k_api::ActuatorConfig::ControlMode::TORQUE);
     for (int id = 1; id < ACTUATOR_COUNT+1; id++)
     {
         left_actuator_config->SetControlMode(control_mode_message, id);
@@ -638,7 +659,7 @@ int main(){
         joint_control_execution(right_base,right_base_cyclic,right_actuator_config, right_base_feedback, 
             right_base_command, right_robot, right_joint_trajectory, 
             right_base_frame, JOINT_CONTROL_FREQUENCY,
-            std::ref(motion_flag), 
+            std::ref(motion_flag), std::ref(execution_ongoing_flag),
             std::ref(right_chicken_flag), std::ref(vicon_data_mutex), dh_params_path,
             std::ref(replan_counter), 
             std::ref(replan_triggered), std::ref(new_trajectory_ready), 
@@ -650,23 +671,37 @@ int main(){
         joint_control_execution(left_base,left_base_cyclic,left_actuator_config, left_base_feedback, 
             left_base_command, left_robot, left_joint_trajectory, 
             left_base_frame, JOINT_CONTROL_FREQUENCY, 
-            std::ref(motion_flag), 
+            std::ref(motion_flag), std::ref(execution_ongoing_flag),
             std::ref(left_chicken_flag), std::ref(vicon_data_mutex), dh_params_path,
             std::ref(replan_counter), 
             std::ref(replan_triggered), std::ref(new_trajectory_ready), 
             std::ref(new_joint_trajectory), std::ref(trajectory_mutex), std::ref(left_record));
     });
+
       
     right_robot_execution_thread.detach();
     left_robot_execution_thread.detach();
+
+    std::thread replan_thread;
 
     phase_idx.store(1);
     
     plan_action(phase_idx, vicon_data_mutex, joint_data_mutex, left_base_frame, right_base_frame,
                 tube_info, human_info, target_info, q_cur_left, q_cur_right, q_init_left, q_init_right, right_arm, left_arm, 
-                left_joint_trajectory, right_joint_trajectory, new_joint_trajectory, trajectory_mutex);
+                left_joint_trajectory, right_joint_trajectory, new_joint_trajectory, target_pose_snapshot, execution_ongoing_flag, left_chicken_flag, right_chicken_flag, trajectory_mutex);
     
-    std::cin.get();  
+    replan_thread =std::thread([&]() {
+        right_arm.replan(
+                    right_joint_trajectory, new_joint_trajectory, right_base_frame, target_pose_snapshot,
+                    std::ref(vicon_data_mutex),
+                    std::ref(trajectory_mutex), std::ref(replan_triggered), 
+                    std::ref(new_trajectory_ready), std::ref(execution_ongoing_flag),
+                    human_info, tube_info, GPMP2_TIMESTEPS, JOINT_CONTROL_FREQUENCY
+                );
+    });
+    replan_thread.detach();
+
+    while(execution_ongoing_flag.load()){std::this_thread::sleep_for(std::chrono::milliseconds(10));}
     
     std::cout << "target pos: ";
      for(auto& k : right_joint_trajectory.pos.back()){std::cout << k << ", ";} 
@@ -680,17 +715,79 @@ int main(){
 
     plan_action(phase_idx, vicon_data_mutex, joint_data_mutex, left_base_frame, right_base_frame,
                 tube_info, human_info, target_info, q_cur_left, q_cur_right, q_init_left, q_init_right, right_arm, left_arm, 
-                left_joint_trajectory, right_joint_trajectory, new_joint_trajectory, trajectory_mutex);
+                left_joint_trajectory, right_joint_trajectory, new_joint_trajectory, target_pose_snapshot, execution_ongoing_flag, left_chicken_flag, right_chicken_flag, trajectory_mutex);
     
-    std::cin.get();   
+    while(execution_ongoing_flag.load()){std::this_thread::sleep_for(std::chrono::milliseconds(10));}
+    
     move_gripper(right_base_cyclic, 50);
     
 
+    phase_idx.store(3);
+    
+    plan_action(phase_idx, vicon_data_mutex, joint_data_mutex, left_base_frame, right_base_frame,
+                tube_info, human_info, target_info, q_cur_left, q_cur_right, q_init_left, q_init_right, right_arm, left_arm, 
+                left_joint_trajectory, right_joint_trajectory, new_joint_trajectory, target_pose_snapshot, execution_ongoing_flag, left_chicken_flag, right_chicken_flag, trajectory_mutex);
+    
+    while(execution_ongoing_flag.load()){std::this_thread::sleep_for(std::chrono::milliseconds(10));}
 
-    // Insert execution codes here
+    phase_idx.store(4);
+    
+    plan_action(phase_idx, vicon_data_mutex, joint_data_mutex, left_base_frame, right_base_frame,
+                tube_info, human_info, target_info, q_cur_left, q_cur_right, q_init_left, q_init_right, right_arm, left_arm, 
+                left_joint_trajectory, right_joint_trajectory, new_joint_trajectory, target_pose_snapshot, execution_ongoing_flag, left_chicken_flag, right_chicken_flag, trajectory_mutex);
+    
+    replan_thread =std::thread([&]() {
+        left_arm.replan(
+                    left_joint_trajectory, new_joint_trajectory, left_base_frame, target_pose_snapshot,
+                    std::ref(vicon_data_mutex),
+                    std::ref(trajectory_mutex), std::ref(replan_triggered), 
+                    std::ref(new_trajectory_ready), std::ref(execution_ongoing_flag),
+                    human_info, tube_info, GPMP2_TIMESTEPS, JOINT_CONTROL_FREQUENCY
+                );
+    });
+    replan_thread.detach();
 
+    while(execution_ongoing_flag.load()){std::this_thread::sleep_for(std::chrono::milliseconds(10));}
 
+    phase_idx.store(5);
+    
+    plan_action(phase_idx, vicon_data_mutex, joint_data_mutex, left_base_frame, right_base_frame,
+                tube_info, human_info, target_info, q_cur_left, q_cur_right, q_init_left, q_init_right, right_arm, left_arm, 
+                left_joint_trajectory, right_joint_trajectory, new_joint_trajectory, target_pose_snapshot, execution_ongoing_flag, left_chicken_flag, right_chicken_flag, trajectory_mutex);
+    
+    while(execution_ongoing_flag.load()){std::this_thread::sleep_for(std::chrono::milliseconds(10));}
 
+    phase_idx.store(6);
+    
+    plan_action(phase_idx, vicon_data_mutex, joint_data_mutex, left_base_frame, right_base_frame,
+                tube_info, human_info, target_info, q_cur_left, q_cur_right, q_init_left, q_init_right, right_arm, left_arm, 
+                left_joint_trajectory, right_joint_trajectory, new_joint_trajectory, target_pose_snapshot, execution_ongoing_flag, left_chicken_flag, right_chicken_flag, trajectory_mutex);
+    
+    while(execution_ongoing_flag.load()){std::this_thread::sleep_for(std::chrono::milliseconds(10));}
+
+    phase_idx.store(7);
+    
+    plan_action(phase_idx, vicon_data_mutex, joint_data_mutex, left_base_frame, right_base_frame,
+                tube_info, human_info, target_info, q_cur_left, q_cur_right, q_init_left, q_init_right, right_arm, left_arm, 
+                left_joint_trajectory, right_joint_trajectory, new_joint_trajectory, target_pose_snapshot, execution_ongoing_flag, left_chicken_flag, right_chicken_flag, trajectory_mutex);
+    
+    while(execution_ongoing_flag.load()){std::this_thread::sleep_for(std::chrono::milliseconds(10));}
+
+    phase_idx.store(8);
+    
+    plan_action(phase_idx, vicon_data_mutex, joint_data_mutex, left_base_frame, right_base_frame,
+                tube_info, human_info, target_info, q_cur_left, q_cur_right, q_init_left, q_init_right, right_arm, left_arm, 
+                left_joint_trajectory, right_joint_trajectory, new_joint_trajectory, target_pose_snapshot, execution_ongoing_flag, left_chicken_flag, right_chicken_flag, trajectory_mutex);
+    
+    while(execution_ongoing_flag.load()){std::this_thread::sleep_for(std::chrono::milliseconds(10));}
+
+    
+    phase_idx.store(9);
+    
+    plan_action(phase_idx, vicon_data_mutex, joint_data_mutex, left_base_frame, right_base_frame,
+                tube_info, human_info, target_info, q_cur_left, q_cur_right, q_init_left, q_init_right, right_arm, left_arm, 
+                left_joint_trajectory, right_joint_trajectory, new_joint_trajectory, target_pose_snapshot, execution_ongoing_flag, left_chicken_flag, right_chicken_flag, trajectory_mutex);
+    
     while(true);
 
 

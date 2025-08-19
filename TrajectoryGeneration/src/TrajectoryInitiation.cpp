@@ -439,51 +439,6 @@ gtsam::Values InitializeTrajectory::initJointTrajectoryFromVicon(
 }
 
 
-
-gtsam::Values InitializeTrajectory::reInitJointTrajectoryFromVicon(
-    const std::vector<gtsam::Vector>& extracted_pos,
-    const std::vector<gtsam::Vector>& extracted_vel,
-    const TubeInfo& tube_info,
-    const HumanInfo& human_info,
-    double offset_from_human_y,
-    double offset_from_tube_z,
-    const gtsam::Pose3& base_pose,
-    const size_t total_time_step,
-    gtsam::Pose3& best_end_pose) 
-{
-    gtsam::Values init_values;
-
-    // Use the third extracted position as the starting configuration
-    gtsam::Vector start_conf = extracted_pos[2];
-    
-    // Call the original interpolateJointSpaceTrajectoryWithTube starting from the third extracted state
-    init_values = initJointTrajectoryFromVicon(start_conf, tube_info, human_info, 
-                                                         offset_from_human_y, offset_from_tube_z,
-                                                         base_pose, total_time_step-2, best_end_pose);
-    
-    // Create new values with the extracted states prepended to the front
-    gtsam::Values final_values;
-    using namespace gtsam;
-    
-    // Add the first two extracted states at the beginning (timesteps 0 and 1)
-    final_values.insert(Symbol('x', 0), extracted_pos[0]);
-    final_values.insert(Symbol('v', 0), extracted_vel[0]);
-    final_values.insert(Symbol('x', 1), extracted_pos[1]);
-    final_values.insert(Symbol('v', 1), extracted_vel[1]);
-    
-    // Shift all the interpolated values by 2 timesteps (what was timestep 0 becomes timestep 2, etc.)
-    for (size_t i = 0; i <= total_time_step-2; ++i) {
-        Symbol pos_key('x', i);
-        Symbol vel_key('v', i);
-        
-        final_values.insert(Symbol('x', i + 2), init_values.at<gtsam::Vector>(pos_key));
-        final_values.insert(Symbol('v', i + 2), init_values.at<gtsam::Vector>(vel_key));
-    
-    }
-    
-    return final_values;
-}
-
 std::tuple<std::deque<Eigen::VectorXd>, std::deque<Eigen::VectorXd>, std::deque<Eigen::VectorXd>> 
 InitializeTrajectory::initTaskSpaceTrajectory(const gtsam::Pose3& start_pose,
                       const gtsam::Pose3& end_pose,
@@ -737,12 +692,15 @@ InitializeTrajectory::initTaskSpaceTrajectory(const gtsam::Pose3& start_pose,
     std::vector<gtsam::Vector> end_confs;
     end_confs.push_back(start_conf);
     gtsam::Vector end_conf;
+    
+    std::cout << "Task space traj generated, ready for inverse kinematics ... \n";
 
     for(int i = 1; i <= num_points; i++){
         for(int j = 0; j < 4; j++){
             if(solveIK(pose_trajectory[i], base_pose, end_confs[i-1], end_conf, 50, 0.25)) {
                 wrapAngles(end_conf, end_confs[i-1]);
                 end_confs.push_back(end_conf);
+                std::cout << "Found valid sol for waypoint: " << i << "\n";
                 break;
             }
 

@@ -39,6 +39,7 @@ public:
         const gtsam::Values& init_values,
         const gtsam::Pose3& target_pose,
         const gtsam::Vector& start_config,
+        const gtsam::Vector& start_vel,
         const JointLimits& pos_limits,
         const JointLimits& vel_limits,
         const size_t total_time_step,

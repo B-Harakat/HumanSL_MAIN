@@ -71,7 +71,7 @@ void updateTubeInfo(TubeInfo& tube_info, std::vector<MarkerData>& tube){
     result.length = maxProj - minProj;
 
     // remove when camera is fixed
-    result.centroid[2] += 0.07;
+    result.centroid[2] += 0.04;
 
     tube_info = result;
     
