@@ -381,10 +381,6 @@ gtsam::Values InitializeTrajectory::initJointTrajectoryFromVicon(
             if(solveIK(target_pose, base_pose, start_conf, end_conf, 50, 0.25)) {
                 wrapAngles(end_conf, start_conf);
                 end_confs.push_back(end_conf);
-                
-                // Print pose information for this successful solution
-                // gtsam::Point3 pos = target_pose.translation();
-                // gtsam::Matrix3 rot = target_pose.rotation().matrix();
             
                 success_count++;
                 double magnitude = (end_conf - start_conf).norm();
@@ -692,15 +688,12 @@ InitializeTrajectory::initTaskSpaceTrajectory(const gtsam::Pose3& start_pose,
     std::vector<gtsam::Vector> end_confs;
     end_confs.push_back(start_conf);
     gtsam::Vector end_conf;
-    
-    std::cout << "Task space traj generated, ready for inverse kinematics ... \n";
 
     for(int i = 1; i <= num_points; i++){
         for(int j = 0; j < 4; j++){
             if(solveIK(pose_trajectory[i], base_pose, end_confs[i-1], end_conf, 50, 0.25)) {
                 wrapAngles(end_conf, end_confs[i-1]);
                 end_confs.push_back(end_conf);
-                std::cout << "Found valid sol for waypoint: " << i << "\n";
                 break;
             }
 

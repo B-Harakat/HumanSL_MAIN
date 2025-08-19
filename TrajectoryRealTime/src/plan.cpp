@@ -289,10 +289,18 @@ bool Gen3Arm::replan_joint(
     std::cout << "Starting replan_joint - extracting future states from trajectory..." << std::endl;
     
     // Step 1: Extract 3 consecutive states starting from timestep 100 (200ms)
-    const size_t future_timestep = static_cast<size_t>(240/(1000.0/control_frequency));  // 250ms / 1ms = 250 timesteps
+    const size_t future_timestep = static_cast<size_t>(1000/(1000.0/control_frequency));  // 250ms / 1ms = 250 timesteps
+    Eigen::VectorXd pos_deg;
+    Eigen::VectorXd vel_deg;
 
-    Eigen::VectorXd pos_deg = old_trajectory.pos[old_trajectory.pos.size()-1];
-    Eigen::VectorXd vel_deg = old_trajectory.vel[old_trajectory.pos.size()-1];
+    if (future_timestep > old_trajectory.pos.size()-1){
+        pos_deg = old_trajectory.pos[old_trajectory.pos.size()-1];
+        vel_deg = old_trajectory.vel[old_trajectory.pos.size()-1];
+    }
+    else{
+        pos_deg = old_trajectory.pos[future_timestep];
+        vel_deg = old_trajectory.vel[future_timestep];
+    }
     
     
     std::cout<<"original old_trajectory at change: ";
@@ -374,15 +382,15 @@ void Gen3Arm::check_replan(const Eigen::VectorXd& trajectory_last_pos,
     // Rolling average parameters
     const size_t rolling_window_size = 50;  // Number of samples for rolling average (500ms at 10ms intervals)
     double position_threshold = 1000;  
-    double rotation_threshold = 1000;   
+    double normal_threshold = 1000;   
     
     // Static deques for rolling averages
     static std::deque<double> position_errors;
-    static std::deque<double> rotation_errors;
+    static std::deque<double> normal_errors;
     
     // Clear deques at start of monitoring
     position_errors.clear();
-    rotation_errors.clear();
+    normal_errors.clear();
     
     while (!check_replan_flag.load() && execution_ongoing_flag.load()) {
         // Check if trajectory has data
@@ -429,50 +437,50 @@ void Gen3Arm::check_replan(const Eigen::VectorXd& trajectory_last_pos,
         // normal_distance = |(p2-p1) · (d1 × d2)| / ||d1 × d2||
         Eigen::Vector3d pos_diff = current_pos_eigen - closest_tube_point;
         Eigen::Vector3d cross_product = z_axis_current.cross(tube_info_snapshot.direction);
-        double rotation_error = std::abs(pos_diff.dot(cross_product)) / cross_product.norm();
+        double normal_error = std::abs(pos_diff.dot(cross_product)) / cross_product.norm();
         
         // Add current errors to rolling average deques
         position_errors.push_back(position_error);
-        rotation_errors.push_back(rotation_error);
+        normal_errors.push_back(normal_error);
 
-        position_threshold = 0.20; // 20cm average position difference
-        rotation_threshold = 0.04;  // 5cm average normal distance between axes
+        position_threshold = 0.25; // 20cm average position difference
+        normal_threshold = 0.06;  // 5cm average normal distance between axes
     
         // Maintain rolling window size
         if (position_errors.size() > rolling_window_size) {
             position_errors.pop_front();
         }
-        if (rotation_errors.size() > rolling_window_size) {
-            rotation_errors.pop_front();
+        if (normal_errors.size() > rolling_window_size) {
+            normal_errors.pop_front();
         }
         
         // Calculate rolling averages (only after we have some samples)
         if (position_errors.size() >= 30) {  // Wait for at least 10 samples before checking
             double avg_position_error = 0.0;
-            double avg_rotation_error = 0.0;
+            double avg_normal_error = 0.0;
             
             for (const auto& error : position_errors) {
                 avg_position_error += error;
             }
             avg_position_error /= position_errors.size();
             
-            for (const auto& error : rotation_errors) {
-                avg_rotation_error += error;
+            for (const auto& error : normal_errors) {
+                avg_normal_error += error;
             }
-            avg_rotation_error /= rotation_errors.size();
+            avg_normal_error /= normal_errors.size();
             
             // Check if average thresholds are exceeded
-            if (avg_position_error > position_threshold || avg_rotation_error > rotation_threshold) {
+            if (avg_position_error > position_threshold || avg_normal_error > normal_threshold) {
                 std::cout << "Replanning threshold exceeded (rolling average)!" << std::endl;
                 std::cout << "Average position error: " << avg_position_error 
                          << " (threshold: " << position_threshold << ")" << std::endl;
-                std::cout << "Average rotation error: " << avg_rotation_error 
-                         << " (threshold: " << rotation_threshold << ")" << std::endl;
+                std::cout << "Average rotation error: " << avg_normal_error 
+                         << " (threshold: " << normal_threshold << ")" << std::endl;
                 std::cout << "Current samples in rolling average: " << position_errors.size() << std::endl;
                 
                 check_replan_flag.store(true);
                 position_errors.clear();
-                rotation_errors.clear();
+                normal_errors.clear();
                 break;
             }
         }
@@ -550,7 +558,7 @@ void Gen3Arm::replan(JointTrajectory& current_trajectory,
                     std::lock_guard<std::mutex> lock(trajectory_mutex);
                     trajectory_snapshot = current_trajectory;
                     size_t remaining_pos = current_trajectory.pos.size();
-                    size_t size_to_skip = static_cast<size_t>(240/(1000.0/control_frequency)); 
+                    size_t size_to_skip = static_cast<size_t>(1000/(1000.0/control_frequency)); 
                     remaining_time_sec = (remaining_pos > size_to_skip && ((remaining_pos-size_to_skip)*(1.0/control_frequency)) > 0.5) ? ((static_cast<double>(remaining_pos-size_to_skip))*(1.0/control_frequency)) : 0.5;
                 }
                 

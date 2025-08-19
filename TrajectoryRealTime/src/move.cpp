@@ -277,8 +277,8 @@ void joint_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::B
             
             robot.setBaseOrientation(base_frame_snapshot.rotation().matrix());
 
-            joint_impedance_control_single(base, base_cyclic, actuator_config, base_feedback, base_command, robot, q_d, dq_d, ddq_d, last_dq, K_joint_diag, q_cur, control_frequency);
-            // joint_position_control_single(base, base_cyclic, base_feedback, base_command,q_d, q_cur);
+            // joint_impedance_control_single(base, base_cyclic, actuator_config, base_feedback, base_command, robot, q_d, dq_d, ddq_d, last_dq, K_joint_diag, q_cur, control_frequency);
+            joint_position_control_single(base, base_cyclic, base_feedback, base_command,q_d, q_cur);
             record.target_trajectory.push_back(q_d);
             record.actual_trajectory.push_back(q_cur);
         }
@@ -329,12 +329,14 @@ void joint_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::B
         previous_replan_state = current_replan_state;
         
         // If replan flag is active, increment the counter every iteration
-        if (current_replan_state) {
+        if (current_replan_state && execution_ongoing_flag.load()) {
             replan_counter.fetch_add(1);
             
             // Check for trajectory replacement at 200ms (100 iterations at 500Hz)
             int current_counter = replan_counter.load();
-            size_t size_to_skip = static_cast<size_t>(240/(1000.0/control_frequency));
+            std::cout << "current replan_counter: " << current_counter << "\n";
+
+            size_t size_to_skip = static_cast<size_t>(1000/(1000.0/control_frequency));
             if (current_counter >= size_to_skip && new_trajectory_ready.load()) {
                 std::cout << "Replacing trajectory at counter: " << current_counter << std::endl;
                 
@@ -370,9 +372,10 @@ void joint_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::B
         }
         else{
             local_counter = 0;
+            execution_ongoing_flag.store(true);
         }
 
-        if(local_counter >= 500){
+        if(local_counter >= 499){
             execution_ongoing_flag.store(false);
         }
 
