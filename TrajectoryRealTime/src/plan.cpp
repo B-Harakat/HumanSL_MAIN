@@ -1,5 +1,6 @@
 #include "plan.h"
 #include "GenerateLogs.h"
+#include "Jacobian.h"
 #include <thread>
 #include <chrono>
 #include <deque>
@@ -145,7 +146,7 @@ void Gen3Arm::plan_joint(JointTrajectory& trajectory,
                      double offset_from_tube_z, 
                      double total_time_sec, 
                      size_t total_time_step,
-                     int control_frequency, bool tune_pose) {
+                     int control_frequency, bool tune_pose, double x_tolerance) {
     
     std::unique_ptr<gpmp2::ArmModel> arm_model = createArmModel(base_pose, dh_params_);
     arm_model_logs  = *arm_model;
@@ -196,13 +197,13 @@ void Gen3Arm::plan_joint(JointTrajectory& trajectory,
             result = optimizeJointTrajectory(
                                     *arm_model, *sdf, init_values, best_end_pose, 
                                     start_conf, start_vel, pos_limits_, vel_limits_, 
-                                    total_time_step, total_time_sec, dt);
+                                    total_time_step, total_time_sec, dt, x_tolerance);
             
             auto optimization_end_time = std::chrono::high_resolution_clock::now();
             auto optimization_duration = std::chrono::duration_cast<std::chrono::milliseconds>(optimization_end_time - optimization_start_time);
             total_optimization_duration += optimization_duration;
 
-            if(result.final_error < 9000.0) break;
+            if(result.final_error < 1000.0) break;
 
             counter++;
             best_final_error = (best_final_error > result.final_error) ? result.final_error : best_final_error;
@@ -429,9 +430,18 @@ void Gen3Arm::check_replan(const Eigen::VectorXd& trajectory_last_pos,
         
         // Calculate normal distance between z-axis and tube axis
         // Get z-axis of current end pose
-        gtsam::Point3 z_axis_gtsam = current_end_pose.rotation().column(2);
+        gtsam::Point3 z_axis_gtsam = current_end_pose.rotation().r3();
         Eigen::Vector3d z_axis_current(z_axis_gtsam.x(), z_axis_gtsam.y(), z_axis_gtsam.z());
+
         
+        // DEBUG: Print z-axis and tube direction
+        // std::cout << "Z-point: [" << current_pos.x()<< ", " << current_pos.y() << ", " << current_pos.z() << "]" << std::endl;
+        // std::cout << "tube-point: [" << closest_tube_point.x()<< ", " << closest_tube_point.y() << ", " << closest_tube_point.z() << "]" << std::endl;
+
+        // std::cout << "Z-axis: [" << z_axis_current.x() << ", " << z_axis_current.y() << ", " << z_axis_current.z() << "]" << std::endl;
+        // std::cout << "Tube direction: [" << tube_info_snapshot.direction.x() << ", " << tube_info_snapshot.direction.y() << ", " << tube_info_snapshot.direction.z() << "]" << std::endl;
+        
+
         // Calculate normal distance between the two lines (z-axis and tube axis)
         // For two lines with directions d1, d2 and points p1, p2:
         // normal_distance = |(p2-p1) · (d1 × d2)| / ||d1 × d2||
@@ -444,7 +454,7 @@ void Gen3Arm::check_replan(const Eigen::VectorXd& trajectory_last_pos,
         normal_errors.push_back(normal_error);
 
         position_threshold = 0.25; // 20cm average position difference
-        normal_threshold = 0.06;  // 5cm average normal distance between axes
+        normal_threshold = 0.10;  // 5cm average normal distance between axes
     
         // Maintain rolling window size
         if (position_errors.size() > rolling_window_size) {
@@ -468,6 +478,10 @@ void Gen3Arm::check_replan(const Eigen::VectorXd& trajectory_last_pos,
                 avg_normal_error += error;
             }
             avg_normal_error /= normal_errors.size();
+
+            // std::cout << "Average position error: " << avg_position_error << "\n"; 
+
+            std::cout << "Average normal error: " << avg_normal_error <<"\n";
             
             // Check if average thresholds are exceeded
             if (avg_position_error > position_threshold || avg_normal_error > normal_threshold) {
@@ -710,7 +724,118 @@ void Gen3Arm::plan_task(JointTrajectory& trajectory,
     }
 }
 
+void Gen3Arm::plan_cartesian_z(JointTrajectory& trajectory, 
+    std::vector<double>& current_joint_pos, 
+    const gtsam::Pose3& base_pose, 
+    const TubeInfo& tube_info,
+    double total_time_sec, 
+    int control_frequency,
+    bool to_tube) {
 
+    visualizeTrajectoryStatic(current_joint_pos, arm_model_logs, dataset_logs, base_pose);
+
+    size_t total_time_step = (total_time_sec * control_frequency) + 1;
+
+    gtsam::Vector start_conf = Eigen::Map<const Eigen::VectorXd>(
+        current_joint_pos.data(), current_joint_pos.size()) * M_PI / 180.0;
+
+    // Get current end-effector pose
+    gtsam::Pose3 current_ee_pose = forward_kinematics(const_cast<gtsam::Pose3&>(base_pose), current_joint_pos);
+    Eigen::Vector3d current_ee_pos = current_ee_pose.translation();
+    gtsam::Point3 z_axis_gtsam = current_ee_pose.rotation().r3();
+    Eigen::Vector3d ee_z_axis(z_axis_gtsam.x(), z_axis_gtsam.y(), z_axis_gtsam.z());
+    
+    // Calculate shortest distance from current EE position to tube axis
+    Eigen::Vector3d tube_direction = tube_info.direction.normalized();
+    Eigen::Vector3d to_ee = current_ee_pos - tube_info.centroid;
+    
+    // Project vector to EE onto tube direction to find closest point on tube axis
+    double projection_length = to_ee.dot(tube_direction);
+    Eigen::Vector3d closest_point_on_tube = tube_info.centroid + projection_length * tube_direction;
+    
+    // Distance from EE to tube axis
+    double distance_to_tube; 
+    if(to_tube){
+        distance_to_tube = (current_ee_pos - closest_point_on_tube).norm();
+    }
+    else{
+        distance_to_tube = 0.2;
+    }
+    
+    // Generate Gaussian velocity profile
+    std::vector<double> velocities(total_time_step);
+    double dt = 1.0/control_frequency;
+    double sigma = total_time_sec / 6.0; // 6-sigma gives nice bell shape
+    double mu = total_time_sec / 2.0;    // Peak at middle
+    
+    // Calculate Gaussian and normalize to achieve desired distance
+    double total_distance = 0.0;
+    for (size_t i = 0; i < total_time_step; ++i) {
+        double t = i * dt;
+        double gaussian = exp(-0.5 * pow((t - mu) / sigma, 2));
+        velocities[i] = gaussian;
+        total_distance += gaussian * dt;
+    }
+    
+    // Scale velocities to achieve exact distance
+    double scale_factor = distance_to_tube / total_distance;
+    for (auto& vel : velocities) {
+        vel *= scale_factor;
+    }
+    
+    // Initialize trajectory
+    trajectory.pos.clear();
+    trajectory.vel.clear();
+    
+    gtsam::Vector current_joint_conf = start_conf;
+    
+    for (size_t i = 0; i < total_time_step; ++i) {
+        // Transform EE z-axis from world frame to base frame
+        Eigen::Matrix3d R_base_inv = base_pose.rotation().matrix().transpose(); // Inverse rotation
+        Eigen::Vector3d ee_z_axis_base_frame = R_base_inv * ee_z_axis;
+        
+        // Desired end-effector velocity along EE z-axis in base frame
+        Eigen::Vector3d desired_ee_vel;
+        if(to_tube){
+            desired_ee_vel = - velocities[i] * ee_z_axis_base_frame;
+        }
+        else{
+            desired_ee_vel = velocities[i] * ee_z_axis_base_frame;
+        }
+        
+        // Convert to 6D twist (linear + angular velocity)
+        Eigen::VectorXd desired_twist(6);
+        desired_twist.head(3) = desired_ee_vel;
+        desired_twist.tail(3) = Eigen::Vector3d::Zero(); // No angular velocity
+        
+
+        // Get Jacobian at current configuration
+        MatrixXd jacobian = Jacobian::jaco_m(current_joint_conf);
+        MatrixXd pinv_jacobian = jacobian.completeOrthogonalDecomposition().pseudoInverse();
+        
+        
+        // Calculate joint velocities
+        gtsam::Vector joint_vel = pinv_jacobian * desired_twist;
+        
+        
+        // Store joint velocity
+        Eigen::VectorXd joint_vel_deg = joint_vel*(180.0/M_PI);
+
+        trajectory.vel.push_back(joint_vel_deg);
+        
+        // Integrate to get joint position
+        if (i == 0) {
+            Eigen::VectorXd joint_pos_deg = current_joint_conf*(180.0/M_PI);
+            trajectory.pos.push_back(joint_pos_deg);
+        } else {
+            current_joint_conf += joint_vel * dt;
+            Eigen::VectorXd joint_pos_deg = current_joint_conf*(180.0/M_PI);
+            trajectory.pos.push_back(joint_pos_deg);
+        }
+        
+    }
+    
+}
 
 
 

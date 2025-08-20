@@ -145,16 +145,18 @@ void updateTargetInfo(gtsam::Point3& target_info, std::vector<MarkerData>& targe
 }
 
 
-void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose3& right_base, TubeInfo& tube_info, HumanInfo& human_info, gtsam::Point3& target_info, std::vector<double>& left_conf, std::vector<double>& right_conf, std::string& dh_params_path, std::shared_mutex& vicon_data_mutex, std::shared_mutex& joint_data_mutex){
+void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose3& right_base, TubeInfo& tube_info, HumanInfo& human_info, gtsam::Point3& target_info, std::vector<double>& left_conf, std::vector<double>& right_conf, DHParameters& dh_params, std::shared_mutex& vicon_data_mutex, std::shared_mutex& joint_data_mutex){
     
     static int counter = 0;
     static std::deque<TubeInfo> tube_info_array;
 
     std::unique_lock<std::shared_mutex> vicon_lock(vicon_data_mutex);
-    
 
     std::vector<MarkerData> right_base_data;
     std::vector<MarkerData> left_base_data;
+
+    std::vector<MarkerData> right_tip_data;
+    std::vector<MarkerData> left_tip_data;
 
     right_base_data.push_back(vicon.getMarkerPosition("right_base1"));
     right_base_data.push_back(vicon.getMarkerPosition("right_base2"));
@@ -165,6 +167,16 @@ void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose
     left_base_data.push_back(vicon.getMarkerPosition("left_base2"));
     left_base_data.push_back(vicon.getMarkerPosition("left_base3"));
     // left_base_data.push_back(vicon.getMarkerPosition("left_base4"));
+
+    right_tip_data.push_back(vicon.getMarkerPosition("right_tip1"));
+    right_tip_data.push_back(vicon.getMarkerPosition("right_tip2"));
+    right_tip_data.push_back(vicon.getMarkerPosition("right_tip3"));
+    right_tip_data.push_back(vicon.getMarkerPosition("right_tip4"));
+
+    left_tip_data.push_back(vicon.getMarkerPosition("left_tip1"));
+    left_tip_data.push_back(vicon.getMarkerPosition("left_tip2"));
+    left_tip_data.push_back(vicon.getMarkerPosition("left_tip3"));
+    left_tip_data.push_back(vicon.getMarkerPosition("left_tip4"));
 
 
     std::vector<MarkerData> tube  = vicon.getMarkerPositions("tube");
@@ -177,7 +189,11 @@ void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose
     updateHumanInfo(human_info, human);
     updateTargetInfo(target_info, target);
 
-    tube_info_array.push_back(tube_info_snapshot);
+    // Only push tube_info_snapshot if y-component is the dominant axis
+    if (std::abs(tube_info_snapshot.direction.y()) > std::abs(tube_info_snapshot.direction.x()) &&
+        std::abs(tube_info_snapshot.direction.y()) > std::abs(tube_info_snapshot.direction.z())) {
+        tube_info_array.push_back(tube_info_snapshot);
+    }
 
     if(tube_info_array.size() >= 100){
         tube_info_array.pop_front();
@@ -217,6 +233,9 @@ void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose
     bool right_base_occluded = false;
     bool left_base_occluded = false;
 
+    bool right_tip_occluded = false;
+    bool left_tip_occluded = false;
+
     for (const auto& marker : right_base_data) {
         if (marker.occluded) {
             right_base_occluded = true;
@@ -231,6 +250,20 @@ void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose
         }
     }
 
+    for (const auto& marker : right_tip_data) {
+        if (marker.occluded) {
+            right_tip_occluded = true;
+            break;
+        }
+    }
+
+    for (const auto& marker : left_tip_data) {
+        if (marker.occluded) {
+            left_tip_occluded = true;
+            break;
+        }
+    }
+
 
     // Estimate left base pose if not occluded
     if (!left_base_occluded && !right_base_occluded) {
@@ -240,6 +273,13 @@ void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose
 
         left_base = left_base_guess2;
         right_base = right_base_guess2;
+    }
+    else if(!left_tip_occluded && !right_tip_occluded){
+        gtsam::Pose3 left_base_guess1 = updatePoseInfo1(left_tip_data, dh_params, left_conf);
+        gtsam::Pose3 right_base_guess1 = updatePoseInfo1(right_tip_data, dh_params, right_conf);
+
+        left_base = left_base_guess1;
+        right_base = right_base_guess1;
     }
 
     // // Estimate right base pose if not occluded
@@ -263,7 +303,7 @@ void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose
 }
 
 
-gtsam::Pose3 updatePoseInfo1(std::vector<MarkerData>& vicon_data, std::string& dh_params_path, std::vector<double>& joint_conf){
+gtsam::Pose3 updatePoseInfo1(std::vector<MarkerData>& vicon_data, DHParameters& dh_params, std::vector<double>& joint_conf){
 
     std::vector<Eigen::Vector3d> ee_positions;
 
@@ -275,10 +315,9 @@ gtsam::Pose3 updatePoseInfo1(std::vector<MarkerData>& vicon_data, std::string& d
     gtsam::Pose3 ee =
         calculateFramePose(ee_positions[0],
         ee_positions[1], ee_positions[2], 
-        ee_positions[3], 0.14, true);
+        ee_positions[3], 0.12, false, false);
 
-
-    DHParameters dh_params = createDHParams(dh_params_path);
+    // std::cout << "EE pose in world" << ee << "\n";
 
     // Convert degrees to radians and std::vector<double> to Eigen::VectorXd
     Eigen::VectorXd joint_conf_rad(joint_conf.size());
@@ -307,7 +346,7 @@ gtsam::Pose3 updatePoseInfo2(std::vector<MarkerData>& vicon_data, MarkerData oth
     gtsam::Pose3 base_guess =
         calculateFramePose(base_positions[0],
         base_positions[1], base_positions[2], 
-        other_arm_point, 0.133, false);
+        other_arm_point, 0.133, false, true);
 
     return base_guess;
 }
@@ -319,7 +358,7 @@ gtsam::Pose3 updatePoseInfo2(std::vector<MarkerData>& vicon_data, MarkerData oth
 gtsam::Pose3 calculateFramePose(const Eigen::Vector3d& world_p1, 
                                const Eigen::Vector3d& world_p2,
                                const Eigen::Vector3d& world_p3, 
-                               const Eigen::Vector3d& world_p4, double z_offset, bool p1_in_positive_x) {
+                               const Eigen::Vector3d& world_p4, double z_offset, bool p1_in_positive_x, bool p4_in_positive_z) {
     
     // Step 1: Find circle center (circumcenter of triangle P1,P2,P3)
     // For 3D circumcenter calculation, work in the plane containing the three points
@@ -364,7 +403,14 @@ gtsam::Pose3 calculateFramePose(const Eigen::Vector3d& world_p1,
     double dot_product = center_to_p4.dot(plane_normal);
     
     // If P4 is on the positive side of the plane, flip the normal
-    Eigen::Vector3d world_z_axis = (dot_product > 0) ? plane_normal : -plane_normal;
+    Eigen::Vector3d world_z_axis;
+
+    if(p4_in_positive_z){
+        world_z_axis = (dot_product > 0) ? plane_normal : -plane_normal;
+    }
+    else{
+        world_z_axis = (dot_product > 0) ? -plane_normal : plane_normal;
+    }
     
     // Step 4: Calculate world x-axis (from center to P1)
     Eigen::Vector3d world_x_axis;

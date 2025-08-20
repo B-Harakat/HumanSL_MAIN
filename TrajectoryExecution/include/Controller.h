@@ -37,6 +37,11 @@ namespace Controller {
                               VectorXd& q, VectorXd& dq, MatrixXd& T_B7,
                               VectorXd& p_d, VectorXd& K_d_diag, 
                               double dt);
+
+    VectorXd chicken_head_velocity_controller(Dynamics& robot,
+                                VectorXd& q, VectorXd& dq, MatrixXd& T_B7,
+                                VectorXd& p_d, VectorXd& K_p_diag,
+                                double dt);
 }
 
 

@@ -13,7 +13,7 @@ TrajectoryResult OptimizeTrajectory::optimizeJointTrajectory(
     const JointLimits& vel_limits,
     const size_t total_time_step,
     const double total_time_sec,
-    const double target_dt) {
+    const double target_dt, double x_tolerance) {
     
     std::cout << "Creating arm trajectory..." << std::endl;
     
@@ -99,7 +99,10 @@ TrajectoryResult OptimizeTrajectory::optimizeJointTrajectory(
     // Add workspace constraints for final waypoint if specified
     gtsam::Symbol final_key('x', total_time_step);
     
-    auto workspace_model = gtsam::noiseModel::Isotropic::Sigma(6, 1e-3);
+    gtsam::Vector6 pose_sigmas;
+    pose_sigmas << x_tolerance, 0.001, 0.001,  // roll, pitch, yaw rotation weights 
+                   0.001, 0.001, 0.001;        // x, y, z position weights
+    auto workspace_model = gtsam::noiseModel::Diagonal::Sigmas(pose_sigmas);
     graph.add(gpmp2::GaussianPriorWorkspacePoseArm(
         final_key, arm_model, 6, target_pose, workspace_model));
     factor_keys.push_back("PoseFactor");

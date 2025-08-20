@@ -117,7 +117,7 @@ public:
                     double offset_from_tube_z, 
                     double total_time_sec, 
                     size_t total_time_step, 
-                    int control_frequency, bool tune_pose = true);
+                    int control_frequency, bool tune_pose = true, double x_tolerance = 0.001);
     
     void plan_joint(JointTrajectory& trajectory, 
                      std::vector<double>& current_joint_pos,  
@@ -184,5 +184,13 @@ public:
                     const double percentage,
                     const double height,
                     const int control_frequency);
+
+    void plan_cartesian_z(JointTrajectory& trajectory, 
+                    std::vector<double>& current_joint_pos, 
+                    const gtsam::Pose3& base_pose, 
+                    const TubeInfo& tube_info,
+                    double total_time_sec, 
+                    int control_frequency,
+                    bool to_tube);
 };
 

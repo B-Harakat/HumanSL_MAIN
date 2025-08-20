@@ -184,6 +184,8 @@ gtsam::Pose3 inverseForwardKinematics(const DHParameters& dh,
 
 std::vector<double> shiftAngle(std::vector<double>& q_cur);
 
+Eigen::VectorXd shiftAngle(Eigen::VectorXd& q_cur);
+
 void shiftAngleInPlace(Eigen::VectorXd& q_cur);
 
 std::tuple<Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd> pop_front(JointTrajectory& trajectory); 

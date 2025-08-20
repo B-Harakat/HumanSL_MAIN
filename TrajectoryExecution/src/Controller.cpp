@@ -622,3 +622,56 @@ VectorXd Controller::chicken_head_controller(Dynamics& robot,
     
     return u;
 }
+
+VectorXd Controller::chicken_head_velocity_controller(Dynamics& robot,
+    VectorXd& q, VectorXd& dq, MatrixXd& T_B7,
+    VectorXd& p_d, VectorXd& K_p_diag,
+    double dt) {
+    
+    // Initialize outputs and variables
+    VectorXd dp(6), e(6);
+    
+    // Static variable to store integral error
+    static VectorXd e_buffer = VectorXd::Zero(6);
+    
+    // Create diagonal gain matrices
+    Vector<double, 6> K_i_diag = 0.05 * K_p_diag.array();  // Integral gain
+    
+    DiagonalMatrix<double, 6> K_p = K_p_diag.asDiagonal();
+    DiagonalMatrix<double, 6> K_i = K_i_diag.asDiagonal();
+    
+    // Compute Jacobian
+    MatrixXd jacobian = jaco_m(q);
+    MatrixXd pinv_jacobian = jacobian.completeOrthogonalDecomposition().pseudoInverse();
+    
+    // Current end-effector state
+    Vector3d pos_end = T_B7.block<3, 1>(0, 3);
+    Matrix3d rot_end = T_B7.block<3, 3>(0, 0);
+    dp = jacobian * dq;
+    
+    // Desired pose
+    Vector3d pos_d = p_d.head<3>();
+    Matrix3d rot_d = euler_to_rotation_matrix(p_d(3), p_d(4), p_d(5));
+    
+    // Compute pose error
+    pos_difference(pos_end, pos_d, rot_end, rot_d, e);
+    
+    // Apply deadband to error
+    const double deadband = 0.005;  // 1mm for position, 0.001 rad for orientation
+    for (int i = 0; i < e.size(); i++) {
+        if (abs(e(i)) < deadband) {
+            e(i) = 0.0;
+        }
+    }
+    
+    // Accumulate integral error
+    e_buffer += e * dt;
+    
+    // PI control to get desired Cartesian velocity
+    VectorXd dp_desired = -(K_p * e) - (K_i * e_buffer);
+    
+    // Convert to joint velocities
+    VectorXd dq_desired = pinv_jacobian * dp_desired;
+    
+    return dq_desired;   
+}

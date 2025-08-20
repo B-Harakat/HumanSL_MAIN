@@ -356,7 +356,9 @@ gtsam::Pose3 inverseForwardKinematics(const DHParameters& dh,
     
     // Solve for base pose: T_world_to_base = T_world_to_ee * T_ee_to_base
     // where T_ee_to_base = inverse(T_base_to_ee)
-    return ee_pose_in_world * T_base_to_ee.inverse();
+    gtsam::Pose3 result = ee_pose_in_world * T_base_to_ee.inverse();
+    
+    return result;
 }
 
 std::vector<double> shiftAngle(std::vector<double>& q_cur) {
@@ -368,6 +370,22 @@ std::vector<double> shiftAngle(std::vector<double>& q_cur) {
             shifted_angles.push_back(angle - 360.0);
         } else {
             shifted_angles.push_back(angle);
+        }
+    }
+    
+    return shifted_angles;
+}
+
+Eigen::VectorXd shiftAngle(Eigen::VectorXd& q_cur) {
+    Eigen::VectorXd shifted_angles(7);
+    
+    for (int i = 0; i < 7; i++) {
+        double angle = q_cur(i);
+
+        if (angle > 180.0) {
+            shifted_angles(i) = angle - 360.0;
+        } else {
+            shifted_angles(i) = angle;
         }
     }
     

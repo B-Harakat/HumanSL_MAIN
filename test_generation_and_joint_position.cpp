@@ -91,7 +91,8 @@ int main(int argc, char **argv)
     // gtsam::Pose3 left_base_frame = right_base_frame; // Keep left_base_frame for compatibility
     
 
-    // gtsam::Pose3 identity_pose;
+    // Create a random gtsam::Pose3 object (not identity)
+    
 
     // DHParameters dh_parameters = createDHParams(dh_params_path);
 
@@ -140,8 +141,46 @@ int main(int argc, char **argv)
     // visualizeTrajectory(joint_trajectory.pos, right_arm.arm_model_logs, right_arm.dataset_logs, right_base_frame);
     
     // === REAL-TIME VISUALIZATION TEST ===
+    std::vector<double> dummy(joint_trajectory.pos.back().data(), joint_trajectory.pos.back().data() + joint_trajectory.pos.back().size()); 
+    gtsam::Pose3 random_pose = right_arm.forward_kinematics(right_base_frame, dummy);
+    std::cout << "EE Pose3 in world: " << random_pose << "\n";
+    std::cout << "base Pose3 in world: " << right_base_frame << "\n";
+    gtsam::Pose3 target_pose_in_current_base_frame = gtsam::Pose3(gtsam::Rot3::Rx(M_PI), gtsam::Point3(0,0,0)) * (right_base_frame.inverse() * random_pose);
+    gtsam::Vector3 pos1 = target_pose_in_current_base_frame.translation();
+    gtsam::Vector3 rpy1 = target_pose_in_current_base_frame.rotation().rpy();
+    Eigen::VectorXd p_d(6);
+    p_d << pos1.x(), pos1.y(), pos1.z(), rpy1.x(), rpy1.y(), rpy1.z();
+
+    gtsam::Pose3 identity_pose = gtsam::Pose3(gtsam::Rot3::Rx(M_PI), gtsam::Point3(0,0,0)); // Base frame at origin
+    gtsam::Pose3 cur_pose = right_arm.forward_kinematics(identity_pose, dummy);
+    auto T_B7 = cur_pose.matrix();
+    gtsam::Vector3 pos = cur_pose.translation();
+    gtsam::Vector3 rpy = cur_pose.rotation().rpy();
+    Eigen::VectorXd p(6);
+    p << pos.x(), pos.y(), pos.z(), rpy.x(), rpy.y(), rpy.z();
+
+    std::cout << "fwd pose: " << cur_pose << "\n";
+
+    std::cout << "p_d relative to base_frame: ";
+    for(auto& k : p_d){std::cout<< k <<", ";}
+    std::cout << "\n";
+
+    std::cout << "fwd measured pose: ";
+    for(auto& k : p){std::cout<< k <<", ";}
+    std::cout << "\n";
+
+    
+
+
     std::cout << "Press Enter to start real-time visualization test" << std::endl;
     std::cin.get();
+
+    std::vector<double> cur_conf(joint_trajectory.pos.back().data(), joint_trajectory.pos.back().data() + joint_trajectory.pos.back().size());
+    for(auto i : cur_conf) std::cout << i << ", ";
+    right_arm.plan_cartesian_z(joint_trajectory, cur_conf, right_base_frame, tube_info, 0.5, 500, true);
+    
+    visualizeTrajectory(joint_trajectory.pos, right_arm.arm_model_logs, right_arm.dataset_logs, right_base_frame);
+
 
 
     
