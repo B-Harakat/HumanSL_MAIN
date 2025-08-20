@@ -13,7 +13,7 @@
 #define PORT 10000
 #define PORT_REAL_TIME 10001
 #define ACTUATOR_COUNT 7
-#define JOINT_CONTROL_FREQUENCY 500
+#define JOINT_CONTROL_FREQUENCY 800
 #define TASK_CONTROL_FREQUENCY 300
 #define GPMP2_TIMESTEPS 50
 
@@ -701,16 +701,16 @@ int main(){
                 tube_info, human_info, target_info, q_cur_left, q_cur_right, q_init_left, q_init_right, right_arm, left_arm, 
                 left_joint_trajectory, right_joint_trajectory, new_joint_trajectory, target_pose_snapshot, left_execution_ongoing_flag, right_execution_ongoing_flag, left_chicken_flag, right_chicken_flag, trajectory_mutex);
     
-    replan_thread =std::thread([&]() {
-        right_arm.replan(
-                    right_joint_trajectory, new_joint_trajectory, right_base_frame, target_pose_snapshot,
-                    std::ref(vicon_data_mutex),
-                    std::ref(trajectory_mutex), std::ref(replan_triggered), 
-                    std::ref(new_trajectory_ready), std::ref(right_execution_ongoing_flag),
-                    human_info, tube_info, GPMP2_TIMESTEPS, JOINT_CONTROL_FREQUENCY
-                );
-    });
-    replan_thread.join();
+    // replan_thread =std::thread([&]() {
+    //     right_arm.replan(
+    //                 right_joint_trajectory, new_joint_trajectory, right_base_frame, target_pose_snapshot,
+    //                 std::ref(vicon_data_mutex),
+    //                 std::ref(trajectory_mutex), std::ref(replan_triggered), 
+    //                 std::ref(new_trajectory_ready), std::ref(right_execution_ongoing_flag),
+    //                 human_info, tube_info, GPMP2_TIMESTEPS, JOINT_CONTROL_FREQUENCY
+    //             );
+    // });
+    // replan_thread.join();
     
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
     while(left_execution_ongoing_flag.load() || right_execution_ongoing_flag.load()){std::cout << "waiting\n"; std::this_thread::sleep_for(std::chrono::milliseconds(10));}

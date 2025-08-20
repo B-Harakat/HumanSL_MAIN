@@ -269,13 +269,8 @@ void joint_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::B
 
 
             }
-
-            {
-            std::shared_lock<std::shared_mutex> vicon_lock(vicon_data_mutex);
-            base_frame_snapshot = base_frame;
-            }
             
-            robot.setBaseOrientation(base_frame_snapshot.rotation().matrix());
+            // robot.setBaseOrientation(base_frame_snapshot.rotation().matrix());
 
             // joint_impedance_control_single(base, base_cyclic, actuator_config, base_feedback, base_command, robot, q_d, dq_d, ddq_d, last_dq, K_joint_diag, q_cur, control_frequency);
             joint_position_control_single(base, base_cyclic, base_feedback, base_command,q_d, q_cur);
