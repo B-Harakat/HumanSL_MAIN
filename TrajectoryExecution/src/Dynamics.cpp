@@ -103,8 +103,8 @@ Eigen::VectorXd Dynamics::convertConfigToJointAngles(const Eigen::VectorXd& q) {
 
 void Dynamics::setBaseOrientation(const Eigen::Matrix3d& R_world_to_base) {
     // Verify it's a valid rotation matrix
-    double det = R_world_to_base.determinant();
-    bool orthogonal = (R_world_to_base * R_world_to_base.transpose()).isApprox(Eigen::Matrix3d::Identity(), 1e-6);
+    // double det = R_world_to_base.determinant();
+    // bool orthogonal = (R_world_to_base * R_world_to_base.transpose()).isApprox(Eigen::Matrix3d::Identity(), 1e-6);
     
     // if (!std::abs(det - 1.0) < 1e-6 || !orthogonal) {
     //     std::cout << "Warning: Provided matrix is not a valid rotation matrix!" << std::endl;
@@ -230,7 +230,7 @@ void Dynamics::computeDynamics(const Eigen::VectorXd& q, const Eigen::VectorXd& 
     pinocchio::crba(model_, data_, q);
     data_.M.triangularView<Eigen::StrictlyLower>() = 
         data_.M.transpose().triangularView<Eigen::StrictlyLower>();
-    pinocchio::computeGeneralizedGravity(model_, data_, q);
+    data_.g = gravity_m(q);
     pinocchio::computeCoriolisMatrix(model_, data_, q, v);
 }
 

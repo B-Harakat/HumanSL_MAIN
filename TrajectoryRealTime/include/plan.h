@@ -131,14 +131,6 @@ public:
                      double total_time_sec,
                      size_t total_time_step,
                      int control_frequency);
-
-    void plan_joint(JointTrajectory& trajectory, 
-                     std::vector<double>& current_joint_pos,  
-                     std::vector<double>& target_joint_pos, 
-                     const gtsam::Pose3& base_pose, 
-                     double total_time_sec, 
-                     size_t total_time_step,
-                     int control_frequency = 1000);
     
 
     // Replan joint space trajectory starting from 200ms future state

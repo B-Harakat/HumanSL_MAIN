@@ -33,10 +33,10 @@ namespace Controller {
                                                       VectorXd& K_joint_diag, VectorXd& K_integral_diag,
                                                       int c_f, double& time_period);
 
-    VectorXd chicken_head_controller(Dynamics& robot, 
+    VectorXd chicken_head_impedance_controller(Dynamics& robot, 
                               VectorXd& q, VectorXd& dq, MatrixXd& T_B7,
                               VectorXd& p_d, VectorXd& K_d_diag, 
-                              double dt);
+                              double dt, bool& first_call);
 
     VectorXd chicken_head_velocity_controller(Dynamics& robot,
                                 VectorXd& q, VectorXd& dq, MatrixXd& T_B7,

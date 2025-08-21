@@ -679,7 +679,7 @@ int main(){
 
     std::thread right_robot_execution_thread;
     right_robot_execution_thread = std::thread([&]() {
-        joint_control_execution(right_base,right_base_cyclic,right_actuator_config, right_base_feedback, 
+        joint_position_control_execution(right_base,right_base_cyclic,right_actuator_config, right_base_feedback, 
             right_base_command, right_robot, right_joint_trajectory, 
             right_base_frame, JOINT_CONTROL_FREQUENCY,
             std::ref(motion_flag), std::ref(right_execution_ongoing_flag),
@@ -691,7 +691,7 @@ int main(){
 
     std::thread left_robot_execution_thread;
     left_robot_execution_thread = std::thread([&]() {
-        joint_control_execution(left_base,left_base_cyclic,left_actuator_config, left_base_feedback, 
+        joint_position_control_execution(left_base,left_base_cyclic,left_actuator_config, left_base_feedback, 
             left_base_command, left_robot, left_joint_trajectory, 
             left_base_frame, JOINT_CONTROL_FREQUENCY, 
             std::ref(motion_flag), std::ref(left_execution_ongoing_flag),
@@ -710,7 +710,7 @@ int main(){
     // std::cout << "Press Enter to start chicken...\n";
     // std::cin.get();
 
-    // right_chicken_flag.store(true);
+    // left_chicken_flag.store(true);
 
 
     // std::cin.get();
@@ -819,7 +819,7 @@ int main(){
     
     while(left_execution_ongoing_flag.load() || right_execution_ongoing_flag.load()){std::this_thread::sleep_for(std::chrono::milliseconds(10));}
 
-    std::cin.get();
+    // std::cin.get();
     
     phase_idx.store(9);
     

@@ -22,7 +22,17 @@ bool joint_impedance_control_single(k_api::Base::BaseClient* base, k_api::BaseCy
                                     VectorXd& q_d, VectorXd& dq_d, VectorXd& ddq_d, 
                                     VectorXd& K_joint_diag, VectorXd& q_cur, int control_frequency);
 
-void joint_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::BaseCyclicClient* base_cyclic, 
+void joint_position_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::BaseCyclicClient* base_cyclic, 
+                                k_api::ActuatorConfig::ActuatorConfigClient* actuator_config, k_api::BaseCyclic::Feedback& base_feedback, k_api::BaseCyclic::Command& base_command,
+                                Dynamics &robot,
+                                JointTrajectory& trajectory, gtsam::Pose3& base_frame,
+                                int control_frequency, std::atomic<bool>& motion_flag, std::atomic<bool>& execution_ongoing_flag,
+                                std::atomic<bool>& chicken_flag, std::shared_mutex& vicon_data_mutex, std::string dh_parameters_path,
+                                std::atomic<int>& replan_counter, std::atomic<bool>& replan_triggered,
+                                std::atomic<bool>& new_trajectory_ready, JointTrajectory& new_trajectory,
+                                std::mutex& trajectory_mutex, TrajectoryRecord& record);
+
+void joint_impedance_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::BaseCyclicClient* base_cyclic, 
                                 k_api::ActuatorConfig::ActuatorConfigClient* actuator_config, k_api::BaseCyclic::Feedback& base_feedback, k_api::BaseCyclic::Command& base_command,
                                 Dynamics &robot,
                                 JointTrajectory& trajectory, gtsam::Pose3& base_frame,
@@ -49,7 +59,12 @@ void task_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::Ba
                                 Dynamics &robot, TaskTrajectory& trajectory, gtsam::Pose3& base_frame, int control_frequency, std::string& dh_parameters_path,
                                 std::atomic<bool>& flag);
 
-bool chicken_head_control_single(k_api::Base::BaseClient* base, k_api::BaseCyclic::BaseCyclicClient* base_cyclic,
+bool chicken_head_velocity_control_single(k_api::Base::BaseClient* base, k_api::BaseCyclic::BaseCyclicClient* base_cyclic,
+                       k_api::ActuatorConfig::ActuatorConfigClient* actuator_config, k_api::BaseCyclic::Feedback& base_feedback, k_api::BaseCyclic::Command& base_command, Dynamics &robot,
+                       VectorXd& p_d, VectorXd& K_d_diag, int control_frequency, bool& first_call, std::chrono::time_point<std::chrono::high_resolution_clock>& start_measure, DHParameters& dh, gtsam::Pose3& base_frame);
+
+
+bool chicken_head_impedance_control_single(k_api::Base::BaseClient* base, k_api::BaseCyclic::BaseCyclicClient* base_cyclic,
                        k_api::ActuatorConfig::ActuatorConfigClient* actuator_config, k_api::BaseCyclic::Feedback& base_feedback, k_api::BaseCyclic::Command& base_command, Dynamics &robot,
                        VectorXd& p_d, VectorXd& K_d_diag, int control_frequency, bool& first_call, std::chrono::time_point<std::chrono::high_resolution_clock>& start_measure, DHParameters& dh, gtsam::Pose3& base_frame);
 

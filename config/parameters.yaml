@@ -1,0 +1,100 @@
+# Trajectory Planning Parameters
+# Configuration for trajectory generation parameters to eliminate magic numbers
+
+trajectory_parameters:
+  right_approach_phase:
+    # Offset from human in Y direction (meters)
+    offset_from_human_y: 0.4
+    # Offset from tube in Z direction (meters) 
+    offset_from_tube_z: 0.1
+    # Total trajectory time in seconds
+    time_sec: 3.5
+    # Number of time steps for trajectory discretization
+    time_steps: 10
+    
+  right_grasp_phase:
+    # Offset from human in Y direction (meters)
+    offset_from_human_y: 0.4
+    # Offset from tube in Z direction (meters) - 0 means directly at tube level
+    offset_from_tube_z: 0.01
+    # Total trajectory time in seconds - shorter for grasp phase
+    time_sec: 1.5
+    # Number of time steps for trajectory discretization
+    time_steps: 10
+    # How "closed" the gripper jaws are, 0 is fully open, 100 is fully closed
+    gripper_jaw_displacement: 50 
+
+  right_shoulder_phase:
+
+    offset_from_human_y: 0.8
+
+    time_sec: 4.0
+
+    percentage: 0.35
+
+    height: 0.25
+
+  left_approach_phase:
+
+    offset_from_human_y: 0.5
+
+    offset_from_tube_z: 0.1
+  
+    time_sec: 3.0
+
+    time_steps: 10
+
+  left_grasp_phase:
+
+    offset_from_human_y: 0.5
+
+    offset_from_tube_z: 0.001
+
+    time_sec: 1.5
+
+    time_steps: 10
+    
+    gripper_jaw_displacement: 50 
+
+  right_disengage_phase_1:  # release gripper from pipe then move slightly downward
+
+    offset_from_human_y: 0.4
+
+    offset_from_tube_z: 0.3
+
+    time_sec: 1.0
+
+    time_steps: 10
+
+    gripper_jaw_displacement: 0 
+
+  right_disengage_phase_2:  # move back to start_conf via joint targets
+
+    time_sec: 3.0
+
+    time_steps: 10
+
+  left_target_phase:
+
+    time_sec: 3.0
+
+    percentage: 0.65
+
+    height: 0.1
+
+
+  
+
+  
+
+
+
+
+
+
+
+
+
+
+
+  
