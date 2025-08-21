@@ -276,8 +276,6 @@ void joint_position_control_execution(k_api::Base::BaseClient* base, k_api::Base
                 std::lock_guard<std::mutex> lock(trajectory_mutex);                
                 auto [q, dq, ddq] = pop_front(trajectory);
                 q_d = q; dq_d = dq; ddq_d = ddq; last_dq = dq;
-
-
             }
 
             {
@@ -294,7 +292,6 @@ void joint_position_control_execution(k_api::Base::BaseClient* base, k_api::Base
         }
         else{
             
-
             {
             std::shared_lock<std::shared_mutex> vicon_lock(vicon_data_mutex);
                 base_frame_snapshot = base_frame;
@@ -317,7 +314,7 @@ void joint_position_control_execution(k_api::Base::BaseClient* base, k_api::Base
         
             // robot.setBaseOrientation(base_frame_snapshot.rotation().matrix());
             
-            chicken_head_velocity_control_single(base, base_cyclic, actuator_config, base_feedback, base_command, robot, p_d, K_d_diag, control_frequency, first_call, start_measure, dh, base_frame_snapshot);
+            chicken_head_velocity_control_single(base, base_cyclic, actuator_config, base_feedback, base_command, robot, p_d, K_d_diag, control_frequency, first_call, start_measure, dh, base_frame_snapshot, trajectory);
         }
 
 
@@ -852,7 +849,7 @@ void task_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::Ba
 
 bool chicken_head_velocity_control_single(k_api::Base::BaseClient* base, k_api::BaseCyclic::BaseCyclicClient* base_cyclic,
                        k_api::ActuatorConfig::ActuatorConfigClient* actuator_config, k_api::BaseCyclic::Feedback& base_feedback, k_api::BaseCyclic::Command& base_command, Dynamics &robot,
-                       VectorXd& p_d, VectorXd& K_d_diag, int control_frequency, bool& first_call, std::chrono::time_point<std::chrono::high_resolution_clock>& start_measure, DHParameters& dh, gtsam::Pose3& base_frame) {
+                       VectorXd& p_d, VectorXd& K_d_diag, int control_frequency, bool& first_call, std::chrono::time_point<std::chrono::high_resolution_clock>& start_measure, DHParameters& dh, gtsam::Pose3& base_frame, JointTrajectory& joint_trajectory) {
     
     // KINOVA feedback (joint space variables)
     VectorXd q(7), dq(7), ddq(7), q_rad(7);
@@ -873,11 +870,19 @@ bool chicken_head_velocity_control_single(k_api::Base::BaseClient* base, k_api::
       dq[i] = base_feedback.actuators(i).velocity();
     }
 
+    VectorXd ddq(7);
+    ddq << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+
     // std::cout << "Raw joint angles (deg): ";
     // for(auto& k : q){std::cout<< k <<", ";}
     // std::cout << "\n";
 
     shiftAngleInPlace(q);  // Apply angle wrapping in degrees
+
+    joint_trajectory.pos[0] = q;
+    joint_trajectory.vel[0] = dq;
+    joint_trajectory.acc[0] = ddq;
+
 
     // std::cout << "Shifted joint angles (deg): ";
     // for(auto& k : q){std::cout<< k <<", ";}
@@ -990,7 +995,6 @@ bool chicken_head_velocity_control_single(k_api::Base::BaseClient* base, k_api::
         return false;
     }
 }
-
 
 bool chicken_head_impedance_control_single(k_api::Base::BaseClient* base, k_api::BaseCyclic::BaseCyclicClient* base_cyclic,
                        k_api::ActuatorConfig::ActuatorConfigClient* actuator_config, k_api::BaseCyclic::Feedback& base_feedback, k_api::BaseCyclic::Command& base_command, Dynamics &robot,
@@ -1122,60 +1126,6 @@ bool chicken_head_impedance_control_single(k_api::Base::BaseClient* base, k_api:
         return false;
     }
 }
-
-// void chicken_head_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::BaseCyclicClient* base_cyclic, 
-//                                 k_api::ActuatorConfig::ActuatorConfigClient* actuator_config, k_api::BaseCyclic::Feedback& base_feedback, k_api::BaseCyclic::Command& base_command, Dynamics &robot,
-//                                 Eigen::VectorXd& p_d_world, gtsam::Pose3& base_frame, int control_frequency, std::string& dh_parameters_path,
-//                                 std::shared_mutex& vicon_data_mutex, std::atomic<bool>& flag){
-    
-//     static thread_local int counter = 0;
-//     auto start_measure = chrono::high_resolution_clock::now();
-
-//     Eigen::VectorXd K_d_diag(6);
-//     K_d_diag << 300, 300, 300, 100, 100, 100;
-
-//     DHParameters_Eigen dh_eigen = createDHParamsEigen(dh_parameters_path);
-
-//     Eigen::VectorXd dp_d_world(6); Eigen::VectorXd ddp_d_world(6);
-//     dp_d_world << 0,0,0,0,0,0;
-//     ddp_d_world << 0,0,0,0,0,0;
-
-//     bool first_call = true;
-
-//     gtsam::Pose3 base_frame_snapshot;
-
-//     while(flag){
-
-//         auto start_control = chrono::high_resolution_clock::now();
-        
-//         // Transform poses from world_frame to base_frame
-//         {
-//             std::shared_lock<std::shared_mutex> vicon_lock(vicon_data_mutex);
-//             base_frame_snapshot = base_frame;
-//         }
-        
-//         auto[p_d, dp_d, ddp_d] = world2base(p_d_world, dp_d_world, ddp_d_world, base_frame_snapshot);
-//         const double iteration_time = (1.0 / control_frequency) * 1000;
-
-//         // robot.setBaseOrientation(base_frame_snapshot.rotation().matrix());
-        
-//         if(!chicken_head_control_single(base, base_cyclic, actuator_config, base_feedback, base_command, robot, p_d, K_d_diag, control_frequency, first_call, start_measure, dh)){
-//             throw std::runtime_error("ERROR: task_impedance_control_single");
-//         }
-
-//         auto end_control = chrono::high_resolution_clock::now();
-//         auto run_time = chrono::duration<double, milli>(end_control - start_control).count();
-//         int diff = 0;
-//         if (run_time < iteration_time) {
-//             auto start_delay = chrono::high_resolution_clock::now();
-//             diff = (iteration_time - run_time) * 1000;
-//             chrono::microseconds delay(diff);
-//             while (chrono::high_resolution_clock::now() - start_delay < delay);
-//         }
-//     }
-// }
-
-
 
 
 void updateJointInfo(  k_api::BaseCyclic::BaseCyclicClient* base_cyclic,

@@ -55,8 +55,7 @@ public:
     gtsam::Values initJointTrajectoryFromVicon(
                                         const gtsam::Vector& start_conf,
                                         const TubeInfo& tube_info,
-                                        const HumanInfo& human_info,
-                                        double offset_from_human_y,
+                                        double offset_from_base_y,
                                         double offset_from_tube_z,
                                         const gtsam::Pose3& base_pose,
                                         const size_t total_time_step,

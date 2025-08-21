@@ -64,8 +64,8 @@ struct HumanInfo {
     HumanBoundingBox bounds;  // Bounding box of human points
     gtsam::Point3 RFIN;
     gtsam::Point3 LFIN;
-    gtsam::Point3 RSHO;
-    gtsam::Point3 LSHO;
+    gtsam::Point3 RFHD;
+    gtsam::Point3 LFHD;
 };
 
 struct TubeInfo {

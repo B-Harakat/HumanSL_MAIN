@@ -145,13 +145,13 @@ bool plan_action(
         switch(trigger_id.load()){
             case 1: // Right arm engages pipe
             {
-                double approach_offset_y = 0.55;
+                double approach_offset_y = 0.4;
                 double approach_offset_z = 0.1;
                 double approach_time_sec = 3.0;
 
                 right_arm.make_sdf(tube_info_snapshot, human_info_snapshot, true, left_base_frame_snapshot, q_cur_left_snapshot);
                 right_arm.plan_joint(new_joint_trajectory, q_cur_right_snapshot, right_base_frame_snapshot, 
-                                    tube_info_snapshot, human_info_snapshot, 
+                                    tube_info_snapshot,
                                     approach_offset_y, approach_offset_z, 
                                     approach_time_sec, GPMP2_TIMESTEPS, JOINT_CONTROL_FREQUENCY);
 
@@ -172,7 +172,7 @@ bool plan_action(
             }
             case 2: // Right arm grasps pipe
             {
-                double grasp_offset_y = 0.55;
+                double grasp_offset_y = 0.4;
                 double grasp_offset_z = 0.001;
                 double grasp_time_sec = 1.5;
 
@@ -200,7 +200,7 @@ bool plan_action(
                 double intermediate_point_percentage = 0.35;
                 double intermediate_point_height = 0.25;
 
-                double move_offset_from_human_max_y = 0.70; // position the gripper furter behind human
+                double move_offset_from_base_y = 0.5; // position the gripper furter behind human
                 double move_offset_from_human_mid_x = -0.15; // positive means moving the end pose towards human left
                 double move_offset_from_human_max_z = 0.25;
 
@@ -210,8 +210,8 @@ bool plan_action(
                 // q_cur_right_snapshot[5] = -60;
                 
                 gtsam::Pose3 start_pose = right_arm.forward_kinematics(right_base_frame_snapshot,q_cur_right_snapshot);
-                gtsam::Pose3 target_pose = right_arm.over_head_pose(human_info_snapshot, start_pose, 
-                                                                    move_offset_from_human_max_y, 
+                gtsam::Pose3 target_pose = right_arm.over_head_pose(human_info_snapshot, right_base_frame_snapshot, start_pose, 
+                                                                    move_offset_from_base_y, 
                                                                     move_offset_from_human_mid_x, 
                                                                     move_offset_from_human_max_z);
     
@@ -230,7 +230,7 @@ bool plan_action(
 
             case 4: // Left arm approaches pipe
             {
-                double approach_offset_y = 0.55;
+                double approach_offset_y = 0.35;
                 double approach_offset_z = 0.15;
                 double approach_time_sec = 3.0;
 
@@ -249,7 +249,7 @@ bool plan_action(
                 //                     JOINT_CONTROL_FREQUENCY);
 
                 left_arm.plan_joint(new_joint_trajectory, q_init_left, left_base_frame_snapshot, 
-                                    tube_info_snapshot, human_info_snapshot, 
+                                    tube_info_snapshot,
                                     approach_offset_y, approach_offset_z, 
                                     approach_time_sec, GPMP2_TIMESTEPS, JOINT_CONTROL_FREQUENCY, false);
 
@@ -377,8 +377,6 @@ bool plan_action(
             left_joint_trajectory = std::move(new_joint_trajectory);
         }
 
-        
-        
         return true;  // Success
 }
 
@@ -513,8 +511,9 @@ int main(){
     std::atomic<int> replan_counter{0};
     std::mutex trajectory_mutex;  // For thread-safe trajectory replacement
     
-    // Thread-safe phase trigger
-    std::atomic<int> phase_idx{0};
+    // Thread-safe state idx
+    std::atomic<int> state_idx{0};
+    std::atomic<int> prev_state_idx{0};
 
     JointTrajectory right_joint_trajectory;
     JointTrajectory left_joint_trajectory;
@@ -531,6 +530,8 @@ int main(){
     TubeInfo tube_info;
     HumanInfo human_info;
     gtsam::Point3 target_info;
+
+    Eigen::Vector3d init_tube_pos;
 
     std::vector<double> q_cur_right(7);
     std::vector<double> q_cur_left(7);
@@ -636,6 +637,13 @@ int main(){
     info_thread.detach();
 
     std::this_thread::sleep_for(std::chrono::milliseconds(2000)); 
+
+
+    {
+        std::shared_lock<std::shared_mutex> vicon_lock(vicon_data_mutex);
+        init_tube_pos = tube_info.centroid;
+    }
+    
     
     // auto control_mode_message = k_api::ActuatorConfig::ControlModeInformation();
     // control_mode_message.set_control_mode(k_api::ActuatorConfig::ControlMode::POSITION);
@@ -723,11 +731,11 @@ int main(){
     
     replan_thread =std::thread([&]() {
         right_arm.replan(
-                    right_joint_trajectory, new_joint_trajectory, right_base_frame, target_pose_snapshot,
-                    std::ref(vicon_data_mutex),
+                    right_joint_trajectory, new_joint_trajectory, right_base_frame,
+                    std::ref(vicon_data_mutex), std::ref(joint_data_mutex),
                     std::ref(trajectory_mutex), std::ref(replan_triggered), 
                     std::ref(new_trajectory_ready), std::ref(right_execution_ongoing_flag),
-                    human_info, tube_info, GPMP2_TIMESTEPS, JOINT_CONTROL_FREQUENCY
+                    human_info, tube_info, left_base_frame, q_cur_left, GPMP2_TIMESTEPS, JOINT_CONTROL_FREQUENCY
                 );
     });
     replan_thread.join();
@@ -770,11 +778,11 @@ int main(){
     
     replan_thread =std::thread([&]() {
         left_arm.replan(
-                    left_joint_trajectory, new_joint_trajectory, left_base_frame, target_pose_snapshot,
-                    std::ref(vicon_data_mutex),
+                    left_joint_trajectory, new_joint_trajectory, left_base_frame,
+                    std::ref(vicon_data_mutex), std::ref(joint_data_mutex),
                     std::ref(trajectory_mutex), std::ref(replan_triggered), 
                     std::ref(new_trajectory_ready), std::ref(left_execution_ongoing_flag),
-                    human_info, tube_info, GPMP2_TIMESTEPS, JOINT_CONTROL_FREQUENCY
+                    human_info, tube_info, right_base_frame, q_cur_right, GPMP2_TIMESTEPS, JOINT_CONTROL_FREQUENCY
                 );
     });
     replan_thread.detach();

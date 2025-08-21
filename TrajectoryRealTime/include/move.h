@@ -61,7 +61,7 @@ void task_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::Ba
 
 bool chicken_head_velocity_control_single(k_api::Base::BaseClient* base, k_api::BaseCyclic::BaseCyclicClient* base_cyclic,
                        k_api::ActuatorConfig::ActuatorConfigClient* actuator_config, k_api::BaseCyclic::Feedback& base_feedback, k_api::BaseCyclic::Command& base_command, Dynamics &robot,
-                       VectorXd& p_d, VectorXd& K_d_diag, int control_frequency, bool& first_call, std::chrono::time_point<std::chrono::high_resolution_clock>& start_measure, DHParameters& dh, gtsam::Pose3& base_frame);
+                       VectorXd& p_d, VectorXd& K_d_diag, int control_frequency, bool& first_call, std::chrono::time_point<std::chrono::high_resolution_clock>& start_measure, DHParameters& dh, gtsam::Pose3& base_frame, JointTrajectory& joint_trajectory);
 
 
 bool chicken_head_impedance_control_single(k_api::Base::BaseClient* base, k_api::BaseCyclic::BaseCyclicClient* base_cyclic,

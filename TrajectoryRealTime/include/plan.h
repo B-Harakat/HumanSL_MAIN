@@ -98,11 +98,12 @@ public:
                                          const gtsam::Pose3& start_pose,
                                          double offset);
 
-    gtsam::Pose3 over_head_pose(const HumanInfo& human_info,             
-                            const gtsam::Pose3& start_pose,
-                            const double& offset_from_human_max_y,
-                            const double& offset_from_human_mid_x,
-                            const double& offset_from_human_max_z);
+    gtsam::Pose3 over_head_pose(const HumanInfo& human_info,
+                                const gtsam::Pose3& base_pose,             
+                                const gtsam::Pose3& start_pose,
+                                const double& offset_from_base_y,
+                                const double& offset_from_human_mid_x,
+                                const double& offset_from_human_max_z);
 
     gtsam::Pose3 over_head_pipe_pose(const gtsam::Pose3& other_arm_info,             
                             HumanInfo& human_info,
@@ -117,11 +118,10 @@ public:
                     std::vector<double>& current_joint_pos, 
                     const gtsam::Pose3& base_pose, 
                     const TubeInfo& tube_info,
-                    const HumanInfo& human_info,
-                    double offset_from_human_y,
+                    double offset_from_base_y,
                     double offset_from_tube_z, 
                     double total_time_sec, 
-                    size_t total_time_step, 
+                    size_t total_time_step,
                     int control_frequency, bool tune_pose = true, double x_tolerance = 0.001);
     
     void plan_joint(JointTrajectory& trajectory, 
@@ -131,17 +131,25 @@ public:
                      double total_time_sec,
                      size_t total_time_step,
                      int control_frequency);
+
+
+    void plan_joint(JointTrajectory& trajectory, 
+                     std::vector<double>& current_joint_pos,  
+                     std::vector<double>& target_joint_pos, 
+                     const gtsam::Pose3& base_pose, 
+                     double total_time_sec, 
+                     size_t total_time_step,
+                     int control_frequency);
     
 
     // Replan joint space trajectory starting from 200ms future state
 
-    bool replan_joint(const JointTrajectory& old_trajectory,
+    bool replan_joint(
+                     const JointTrajectory& old_trajectory,
                      JointTrajectory& new_trajectory, 
                      const gtsam::Pose3& base_pose, 
                      const TubeInfo& tube_info,
-                     const HumanInfo& human_info,
-                     gtsam::Pose3& target_pose,
-                     double offset_from_human_y,
+                     double offset_from_base_y,
                      double offset_from_tube_z,
                      double total_time_sec, 
                      size_t total_time_step,
@@ -151,7 +159,6 @@ public:
     // Check if replanning is needed by monitoring end pose deviation
     void check_replan(const Eigen::VectorXd& trajectory_last_pos,
                           const gtsam::Pose3& base_pose,
-                          const gtsam::Pose3& target_pose,
                           const TubeInfo& tube_info, 
                           std::shared_mutex& vicon_data_mutex,
                           std::atomic<bool>& check_replan_flag, std::atomic<bool>& execution_ongoing_flag);
@@ -161,13 +168,15 @@ public:
     void replan(JointTrajectory& current_trajectory,
                     JointTrajectory& new_trajectory,
                     gtsam::Pose3& base_pose,
-                    gtsam::Pose3& target_pose,
                     std::shared_mutex& vicon_data_mutex,
+                    std::shared_mutex& joint_data_mutex,
                     std::mutex& trajectory_mutex,
                     std::atomic<bool>& replan_triggered,
                     std::atomic<bool>& new_trajectory_ready,
                     std::atomic<bool>& execution_ongoing_flag,
                     HumanInfo& human_info, TubeInfo& tube_info,
+                    gtsam::Pose3& other_base_pose,
+                    std::vector<double>& other_conf,
                     size_t total_time_step, int control_frequency
                 );
 
@@ -190,7 +199,9 @@ public:
                     const double percentage,
                     const double height,
                     const int control_frequency,
-                    bool target_pose_only = false);
+                    bool target_pose_only = false,
+                    double y_pos_tolerance = 0.1,
+                    double y_rot_tolerance = 0.01);
 
     void plan_cartesian_z(JointTrajectory& trajectory, 
                     std::vector<double>& current_joint_pos, 

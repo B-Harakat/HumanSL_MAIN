@@ -59,7 +59,9 @@ public:
         const size_t total_time_step,
         const double total_time_sec,
         const double target_dt = 0.001,
-        bool target_pose_only = false
+        bool target_pose_only = false,
+        double y_pos_tolerance = 0.1,
+        double y_rot_tolerance = 0.01
     );
 
     TrajectoryResult reOptimizeJointTrajectory(

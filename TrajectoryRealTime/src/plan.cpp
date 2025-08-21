@@ -86,16 +86,18 @@ gtsam::Pose3 Gen3Arm::create_target_pose(const HumanInfo& human_info,
     return target_pose;
 }
 
-gtsam::Pose3 Gen3Arm::over_head_pose(const HumanInfo& human_info,             
+gtsam::Pose3 Gen3Arm::over_head_pose(const HumanInfo& human_info,
+                            const gtsam::Pose3& base_pose,             
                             const gtsam::Pose3& start_pose,
-                            const double& offset_from_human_max_y,
+                            const double& offset_from_base_y,
                             const double& offset_from_human_mid_x,
                             const double& offset_from_human_max_z) {
     
     // Calculate target y position
     gtsam::Point3 start_pos = start_pose.translation();
     
-    double target_y = human_info.bounds.max_y + offset_from_human_max_y;
+    
+    double target_y = base_pose.translation().y() + offset_from_base_y;
     double target_x = human_info.bounds.min_x + (human_info.bounds.max_x - human_info.bounds.min_x)/2 + offset_from_human_mid_x;
     double target_z = human_info.bounds.max_z + offset_from_human_max_z;
 
@@ -171,8 +173,7 @@ void Gen3Arm::plan_joint(JointTrajectory& trajectory,
                      std::vector<double>& current_joint_pos, 
                      const gtsam::Pose3& base_pose, 
                      const TubeInfo& tube_info,
-                     const HumanInfo& human_info,
-                     double offset_from_human_y,
+                     double offset_from_base_y,
                      double offset_from_tube_z, 
                      double total_time_sec, 
                      size_t total_time_step,
@@ -211,8 +212,8 @@ void Gen3Arm::plan_joint(JointTrajectory& trajectory,
 
             auto init_start_time = std::chrono::high_resolution_clock::now();
 
-            gtsam::Values init_values = initJointTrajectoryFromVicon(start_conf, tube_info, human_info, 
-                                                                    offset_from_human_y, offset_from_tube_z,
+            gtsam::Values init_values = initJointTrajectoryFromVicon(start_conf, tube_info,
+                                                                    offset_from_base_y, offset_from_tube_z,
                                                                     base_pose, total_time_step, best_end_pose, tune_pose);
             
             auto init_end_time = std::chrono::high_resolution_clock::now();
@@ -387,15 +388,12 @@ void Gen3Arm::plan_joint(JointTrajectory& trajectory,
     trajectory = convertTrajectory<JointTrajectory>(result, dt); 
 }
 
-
 bool Gen3Arm::replan_joint(
                      const JointTrajectory& old_trajectory,
                      JointTrajectory& new_trajectory, 
                      const gtsam::Pose3& base_pose, 
                      const TubeInfo& tube_info,
-                     const HumanInfo& human_info,
-                     gtsam::Pose3& target_pose,
-                     double offset_from_human_y,
+                     double offset_from_base_y,
                      double offset_from_tube_z,
                      double total_time_sec, 
                      size_t total_time_step,
@@ -444,11 +442,13 @@ bool Gen3Arm::replan_joint(
     int counter = 0;
     double best_final_error = 50000;
 
+    gtsam::Pose3 target_pose;
+
     while(true){
 
         // Step 2: Use re_initializeTrajectory with the extracted states
-        gtsam::Values init_values = initJointTrajectoryFromVicon(extracted_pos, tube_info, human_info, 
-                                                         offset_from_human_y, offset_from_tube_z,
+        gtsam::Values init_values = initJointTrajectoryFromVicon(extracted_pos, tube_info,
+                                                         offset_from_base_y, offset_from_tube_z,
                                                          base_pose, total_time_step, target_pose);
         
         double dt = 1.0 / control_frequency;
@@ -487,7 +487,6 @@ bool Gen3Arm::replan_joint(
 
 void Gen3Arm::check_replan(const Eigen::VectorXd& trajectory_last_pos,
                           const gtsam::Pose3& base_pose,
-                          const gtsam::Pose3& target_pose,
                           const TubeInfo& tube_info, 
                           std::shared_mutex& vicon_data_mutex,
                           std::atomic<bool>& check_replan_flag, std::atomic<bool>& execution_ongoing_flag) {
@@ -623,13 +622,15 @@ void Gen3Arm::check_replan(const Eigen::VectorXd& trajectory_last_pos,
 void Gen3Arm::replan(JointTrajectory& current_trajectory,
                     JointTrajectory& new_trajectory,
                     gtsam::Pose3& base_pose,
-                    gtsam::Pose3& target_pose,
                     std::shared_mutex& vicon_data_mutex,
+                    std::shared_mutex& joint_data_mutex,
                     std::mutex& trajectory_mutex,
                     std::atomic<bool>& replan_triggered,
                     std::atomic<bool>& new_trajectory_ready,
                     std::atomic<bool>& execution_ongoing_flag,
                     HumanInfo& human_info, TubeInfo& tube_info,
+                    gtsam::Pose3& other_base_pose,
+                    std::vector<double>& other_conf,
                     size_t total_time_step, int control_frequency
                 ) {
     
@@ -655,7 +656,7 @@ void Gen3Arm::replan(JointTrajectory& current_trajectory,
             std::cout << "last pos: ";
             for(auto& k : trajectory_last_pos){ std::cout << std::round(k*100)/100 << ", ";}
             std::cout << "\n";
-            check_replan(trajectory_last_pos, base_pose, target_pose, tube_info, vicon_data_mutex, check_replan_flag, execution_ongoing_flag);
+            check_replan(trajectory_last_pos, base_pose, tube_info, vicon_data_mutex, check_replan_flag, execution_ongoing_flag);
               
             
             // If replanning is needed
@@ -673,11 +674,20 @@ void Gen3Arm::replan(JointTrajectory& current_trajectory,
                 TubeInfo tube_info_snapshot;
                 HumanInfo human_info_snapshot;
                 gtsam::Pose3 base_pose_snapshot;
+                gtsam::Pose3 other_base_pose_snapshot;
+                std::vector<double> other_conf_snapshot;
+
                 {
                     std::shared_lock<std::shared_mutex> vicon_lock(vicon_data_mutex);
                     tube_info_snapshot = tube_info;
                     human_info_snapshot = human_info;
                     base_pose_snapshot = base_pose;
+                    other_base_pose_snapshot = other_base_pose;
+                }
+
+                {
+                    std::shared_lock<std::shared_mutex> joint_lock(joint_data_mutex);
+                    other_conf_snapshot = other_conf;
                 }
 
                 JointTrajectory trajectory_snapshot;
@@ -691,6 +701,8 @@ void Gen3Arm::replan(JointTrajectory& current_trajectory,
                 }
                 
                 std::cout << "Calling replan_joint() with snapshot data..." << std::endl;
+
+                make_sdf(tube_info_snapshot, human_info_snapshot, true, other_base_pose_snapshot, other_conf);
               
                 // Generate new trajectory (this takes ~200ms)
                 if(replan_joint(
@@ -698,9 +710,7 @@ void Gen3Arm::replan(JointTrajectory& current_trajectory,
                     new_trajectory,
                     base_pose_snapshot,
                     tube_info_snapshot,
-                    human_info_snapshot,
-                    target_pose,
-                    0.55, 0.12,  // offset parameters
+                    0.3, 0.12,  // offset parameters
                     remaining_time_sec, total_time_step, control_frequency    // time and timestep parameters
                 )){
                     std::cout << "New trajectory generated successfully." << std::endl;
@@ -752,7 +762,9 @@ void Gen3Arm::plan_task(JointTrajectory& trajectory,
                     const double percentage,
                     const double height,
                     const int control_frequency,
-                    bool target_pose_only) {
+                    bool target_pose_only,
+                    double y_pos_tolerance,
+                    double y_rot_tolerance) {
     
     std::unique_ptr<gpmp2::ArmModel> arm_model = createArmModel(base_pose, dh_params_);
     arm_model_logs  = *arm_model;
@@ -830,7 +842,8 @@ void Gen3Arm::plan_task(JointTrajectory& trajectory,
             result = optimizeTaskTrajectory(
                                     *arm_model, *sdf, init_values, pose_trajectory, 
                                     start_conf, pos_limits_, vel_limits_, 
-                                    total_time_step, total_time_sec, dt, target_pose_only);
+                                    total_time_step, total_time_sec, dt, target_pose_only, 
+                                    y_pos_tolerance, y_rot_tolerance);
             
             auto optimization_end_time = std::chrono::high_resolution_clock::now();
             auto optimization_duration = std::chrono::duration_cast<std::chrono::milliseconds>(optimization_end_time - optimization_start_time);

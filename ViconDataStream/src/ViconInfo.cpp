@@ -136,12 +136,12 @@ void updateHumanInfo(HumanInfo& human_info, std::vector<MarkerData>& human){
             human_info.LFIN = gtsam::Point3(x, y, z);
         }
 
-        if(marker.name == "human_RSHO"){
-            human_info.RSHO = gtsam::Point3(x, y, z);
+        if(marker.name == "human_RFHD"){
+            human_info.RFHD = gtsam::Point3(x, y, z);
         }
 
-        if(marker.name == "human_LSHO"){
-            human_info.LSHO = gtsam::Point3(x, y, z);
+        if(marker.name == "human_LFHD"){
+            human_info.LFHD = gtsam::Point3(x, y, z);
         }
     }
     
@@ -169,14 +169,22 @@ void updateTargetInfo(gtsam::Point3& target_info, std::vector<MarkerData>& targe
 }
 
 
-void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose3& right_base, TubeInfo& tube_info, HumanInfo& human_info, gtsam::Point3& target_info, std::vector<double>& left_conf, std::vector<double>& right_conf, DHParameters& dh_params, std::shared_mutex& vicon_data_mutex, std::shared_mutex& joint_data_mutex){
+void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose3& right_base, TubeInfo& tube_info, HumanInfo& human_info, gtsam::Point3& target_info, std::vector<double>& left_conf, std::vector<double>& right_conf, Eigen::Vector3d& lfin, Eigen::Vector3d& rfin, Eigen::Vector3d& head, DHParameters& dh_params, std::shared_mutex& vicon_data_mutex, std::shared_mutex& joint_data_mutex){
     
     static int counter = 0;
     static std::deque<TubeInfo> tube_info_array;
     static std::deque<gtsam::Pose3> left_base_array;
     static std::deque<gtsam::Pose3> right_base_array;
 
+    static std::deque<Eigen::Vector3d> left_finger_pos_array;
+    static std::deque<Eigen::Vector3d> right_finger_pos_array;
+
+    static std::deque<Eigen::Vector3d> forehead_pos_array;
+    static std::deque<Eigen::Vector3d> rfin_head_delta_array;
+
     std::unique_lock<std::shared_mutex> vicon_lock(vicon_data_mutex);
+
+
 
     std::vector<MarkerData> right_base_data;
     std::vector<MarkerData> left_base_data;
@@ -221,9 +229,6 @@ void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose
     tube_mid.push_back(vicon.getMarkerPosition("tube_mid2"));
     tube_mid.push_back(vicon.getMarkerPosition("tube_mid3"));
     
-    
-
-
     std::vector<MarkerData> human = vicon.getMarkerPositions("human");
     std::vector<MarkerData> target= vicon.getMarkerPositions("target");
     
@@ -479,25 +484,71 @@ void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose
         left_base = left_base_current;
         right_base = right_base_current;
     }
-
-    // // Estimate right base pose if not occluded
-    // if (!right_base_occluded) {
-
-    //     gtsam::Pose3 right_base_guess2 = updatePoseInfo2(right_base_data, left_base_data.front());
-
-    //     right_base = right_base_guess2;
-    // }
-
-    // for (auto& marker : tube){
-    //     std::cout << "Tube data: \n";
-    //     std::cout << marker.x << " " << marker.y << " " << marker.z << "\n";
-    // }
-
-    // for (auto& marker : human){
-    //     std::cout << "human data: \n";
-    //     std::cout << marker.x << " " << marker.y << " " << marker.z << "\n";
-    // }
     
+    int max_size = 30;
+
+    if(human_info.LFIN.occluded == false){
+        double x = human_info.LFIN.x() / 1000;
+        double y = human_info.LFIN.y() / 1000;
+        double z = human_info.LFIN.z() / 1000;
+
+        left_finger_pos_array.push_back(Eigen::Vector3d(x,y,z));
+
+        if(left_finger_pos_array.size() > max_size) left_finger_pos_array.pop_front();
+    }
+
+    if(human_info.RFIN.occluded == false){
+        double x = human_info.RFIN.x() / 1000;
+        double y = human_info.RFIN.y() / 1000;
+        double z = human_info.RFIN.z() / 1000;
+
+        right_finger_pos_array.push_back(Eigen::Vector3d(x,y,z));
+
+        if(right_finger_pos_array.size() > max_size) right_finger_pos_array.pop_front();
+    }
+
+    if(human_info.RFHD.occluded == false && human_info.LFHD.occluded){
+
+        double xr = human_info.RFHD.x() / 1000;
+        double yr = human_info.RFHD.y() / 1000;
+        double zr = human_info.RFHD.z() / 1000;
+
+        double xl = human_info.LFHD.x() / 1000;
+        double yl = human_info.LFHD.y() / 1000;
+        double zl = human_info.LFHD.z() / 1000;
+
+        double x = (xr+xl) /2;
+        double y = (yr+yl) /2;
+        double z = (zr+zl) /2;
+
+        forehead_pos_array.push_back(Eigen::Vector3d(x,y,z));
+
+        if(forehead_pos_array.size() > max_size) forehead_pos_array.pop_front();
+    }
+
+    Eigen::Vector3d avg_lfin = Eigen::Vector3d::Zero();
+    Eigen::Vector3d avg_rfin = Eigen::Vector3d::Zero();
+    Eigen::Vector3d avg_head = Eigen::Vector3d::Zero();
+
+    for(const auto& pos : left_finger_pos_array) {
+        avg_lfin += pos;
+    }
+    avg_lfin /= left_finger_pos_array.size();
+
+    // Calculate average right finger position
+    for(const auto& pos : right_finger_pos_array) {
+        avg_rfin += pos;
+    }
+    avg_rfin /= right_finger_pos_array.size();
+
+    for(const auto& pos : forehead_pos_array) {
+        avg_head += pos;
+    }
+    avg_head /= forehead_pos_array.size();
+
+    lfin = avg_lfin;
+    rfin = avg_rfin;
+    head = avg_head;
 }
 
 
@@ -635,4 +686,80 @@ gtsam::Pose3 calculateFramePose(const Eigen::Vector3d& world_p1,
     gtsam::Point3 translation(translation_with_z_offset);
     
     return gtsam::Pose3(rotation, translation);
+}
+
+
+void state_monitor(Eigen::Vector3d& avg_lfin, Eigen::Vector3d& avg_rfin, Eigen::Vector3d& avg_head, TubeInfo& avg_tube_info, std::atomic<int> state_idx){
+
+    static std::deque<double> rfin_head_delta_array;
+    double avg_delta = 0;
+
+    bool rfin_on_tube = false;
+    bool lfin_on_tube = false;
+    bool tube_on_head = false;
+    bool r_thumbs_up  = false;
+
+    // Calculate closest distance between avg_rfin and tube axis
+    double lfin_tube_distance = std::numeric_limits<double>::max();
+    double rfin_tube_distance = std::numeric_limits<double>::max();
+
+    
+    {
+    Eigen::Vector3d to_point = avg_lfin - avg_tube_info.centroid;
+    double t = to_point.dot(avg_tube_info.direction);
+    Eigen::Vector3d closest_point_on_axis = avg_tube_info.centroid + t * avg_tube_info.direction;
+    lfin_tube_distance = (avg_lfin - closest_point_on_axis).norm();
+    }
+
+    {
+    Eigen::Vector3d to_point = avg_rfin - avg_tube_info.centroid;
+    double t = to_point.dot(avg_tube_info.direction);
+    Eigen::Vector3d closest_point_on_axis = avg_tube_info.centroid + t * avg_tube_info.direction;
+    rfin_tube_distance = (avg_rfin - closest_point_on_axis).norm();
+    }
+
+    double tube_head_distance = avg_tube_info.centroid.z() - avg_head.z();
+
+    {
+        double rfin_head_delta = abs(avg_rfin.x()-avg_head.x());
+        rfin_head_delta_array.push_back(rfin_head_delta);
+
+        for(const auto& pos : rfin_head_delta_array) {
+            avg_delta += pos;
+        }
+        avg_delta /= rfin_head_delta_array.size();
+
+        if(rfin_head_delta_array.size() > 200){
+            rfin_head_delta_array.pop_front();
+        }
+    }
+
+
+    if(rfin_tube_distance < 0.05){  // 5cm threshold
+        rfin_on_tube = true;
+    }
+
+    if(lfin_tube_distance < 0.05){
+        lfin_on_tube = true;
+    }
+
+    if(tube_head_distance > 0){
+        tube_on_head = true;
+    }
+
+    if(lfin_on_tube && avg_delta > 0.45){
+        r_thumbs_up = true;
+    }
+
+
+    if(rfin_on_tube && !lfin_on_tube && !tube_on_head){
+        state_idx.store(1);
+    }
+    if(rfin_on_tube && lfin_on_tube && tube_on_head){
+        state_idx.store(2);
+    }
+    if(!rfin_on_tube && lfin_on_tube && r_thumbs_up){
+        state_idx.store(3);
+    }
+
 }

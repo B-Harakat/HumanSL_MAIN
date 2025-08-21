@@ -164,7 +164,9 @@ TrajectoryResult OptimizeTrajectory::optimizeTaskTrajectory(
     const size_t total_time_step,
     const double total_time_sec,
     const double target_dt,
-    bool target_pose_only) {
+    bool target_pose_only,
+    double y_pos_tolerance,
+    double y_rot_tolerance) {
     
     std::cout << "Creating arm trajectory..." << std::endl;
     

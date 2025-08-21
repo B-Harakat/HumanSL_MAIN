@@ -276,8 +276,7 @@ gtsam::Values InitializeTrajectory::initJointTrajectoryFromTarget(
 gtsam::Values InitializeTrajectory::initJointTrajectoryFromVicon(
                                 const gtsam::Vector& start_conf,
                                 const TubeInfo& tube_info,
-                                const HumanInfo& human_info,
-                                double offset_from_human_y,
+                                double offset_from_base_y,
                                 double offset_from_tube_z,
                                 const gtsam::Pose3& base_pose,
                                 const size_t total_time_step,
@@ -288,10 +287,10 @@ gtsam::Values InitializeTrajectory::initJointTrajectoryFromVicon(
     double best_quality = 1e20;
 
     // Calculate target y position
-    double target_y = human_info.bounds.max_y + offset_from_human_y;
+    double target_y = base_pose.translation().y() + offset_from_base_y;
 
-    std::cout << "Human info max y: " << human_info.bounds.max_y << "\n";
-    std::cout << "Human info min y: " << human_info.bounds.min_y << "\n";
+    std::cout << "Base info: " << base_pose.translation().x() << ", " << base_pose.translation().y() << ", " << base_pose.translation().z() <<"\n";
+    std::cout << "Target y: " << target_y << "\n";
     
     // Find point on tube axis where y = target_y
     double t = (target_y - tube_info.centroid.y()) / tube_info.direction.y();
