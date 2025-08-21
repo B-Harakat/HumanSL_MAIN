@@ -58,7 +58,8 @@ public:
         const JointLimits& vel_limits,
         const size_t total_time_step,
         const double total_time_sec,
-        const double target_dt = 0.001
+        const double target_dt = 0.001,
+        bool target_pose_only = false
     );
 
     TrajectoryResult reOptimizeJointTrajectory(

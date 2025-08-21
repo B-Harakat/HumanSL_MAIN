@@ -100,9 +100,10 @@ TrajectoryResult OptimizeTrajectory::optimizeJointTrajectory(
     gtsam::Symbol final_key('x', total_time_step);
     
     gtsam::Vector6 pose_sigmas;
-    pose_sigmas << x_tolerance, 0.001, 0.001,  // roll, pitch, yaw rotation weights 
-                   0.001, 0.001, 0.001;        // x, y, z position weights
+    pose_sigmas << x_tolerance, 0.01, 0.01,  // roll, pitch, yaw rotation weights 
+                   0.01, 0.01, 0.01;        // x, y, z position weights
     auto workspace_model = gtsam::noiseModel::Diagonal::Sigmas(pose_sigmas);
+
     graph.add(gpmp2::GaussianPriorWorkspacePoseArm(
         final_key, arm_model, 6, target_pose, workspace_model));
     factor_keys.push_back("PoseFactor");
@@ -162,7 +163,8 @@ TrajectoryResult OptimizeTrajectory::optimizeTaskTrajectory(
     const JointLimits& vel_limits,
     const size_t total_time_step,
     const double total_time_sec,
-    const double target_dt) {
+    const double target_dt,
+    bool target_pose_only) {
     
     std::cout << "Creating arm trajectory..." << std::endl;
     
@@ -248,15 +250,24 @@ TrajectoryResult OptimizeTrajectory::optimizeTaskTrajectory(
     
     gtsam::Vector6 pose_sigmas;
     pose_sigmas << 0.01, 0.01, 0.01,  // x, y, z position weights (y is less punished)
-                   0.01, 1, 0.01;  // roll, pitch, yaw rotation weights
+                   0.01, 0.2, 0.01;  // roll, pitch, yaw rotation weights
     auto workspace_model = gtsam::noiseModel::Diagonal::Sigmas(pose_sigmas);
-    for(size_t i = 0; i <= total_time_step; i++){
-        gtsam::Symbol key_pos('x', i);
+    
+    if(target_pose_only){
+        gtsam::Symbol final_key('x', total_time_step);
         graph.add(gpmp2::GaussianPriorWorkspacePoseArm(
-            key_pos, arm_model, 6, pose_trajectory[i], workspace_model));
+            final_key, arm_model, 6, pose_trajectory[total_time_step], workspace_model));
         factor_keys.push_back("PoseFactor");
     }
-    
+    else{
+        for(size_t i = 0; i <= total_time_step; i++){
+            gtsam::Symbol key_pos('x', i);
+            graph.add(gpmp2::GaussianPriorWorkspacePoseArm(
+                key_pos, arm_model, 6, pose_trajectory[i], workspace_model));
+            factor_keys.push_back("PoseFactor");
+        }
+    }
+        
     for (size_t i = 0; i < graph.size(); ++i) {
       
         double constraint_error = graph.at(i)->error(init_values);
@@ -464,18 +475,18 @@ TrajectoryResult OptimizeTrajectory::reOptimizeJointTrajectory(
     }
     
     // Add jerk penalty factors for consecutive position triplets
-    auto jerk_noise_model = gtsam::noiseModel::Isotropic::Sigma(7, 0.0001);
-    for (size_t i = 1; i < total_time_step; ++i) {
+    // auto jerk_noise_model = gtsam::noiseModel::Isotropic::Sigma(7, 0.0001);
+    // for (size_t i = 1; i < total_time_step; ++i) {
 
-        // if(i == 1 || i == total_time_step - 1){}
-        gtsam::Symbol key_pos1('x', i - 1);
-        gtsam::Symbol key_pos2('x', i);
-        gtsam::Symbol key_pos3('x', i + 1);
+    //     // if(i == 1 || i == total_time_step - 1){}
+    //     gtsam::Symbol key_pos1('x', i - 1);
+    //     gtsam::Symbol key_pos2('x', i);
+    //     gtsam::Symbol key_pos3('x', i + 1);
         
-        graph.add(JerkPenaltyFactor(
-            key_pos1, key_pos2, key_pos3, jerk_noise_model, delta_t));
-        factor_keys.push_back("JerkFactor");
-    }
+    //     graph.add(JerkPenaltyFactor(
+    //         key_pos1, key_pos2, key_pos3, jerk_noise_model, delta_t));
+    //     factor_keys.push_back("JerkFactor");
+    // }
     
     // Target pose constraint at end
     auto workspace_model = gtsam::noiseModel::Isotropic::Sigma(6, 1e-4);

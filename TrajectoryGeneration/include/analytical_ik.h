@@ -22,7 +22,7 @@ struct KinovaGen3Params {
         {0.0,       M_PI/2,  -0.0128,      M_PI},   // Joint 3
         {0.0,       M_PI/2,  -0.3143,      M_PI},   // Joint 4
         {0.0,       M_PI/2,   0.0,         M_PI},   // Joint 5
-        {0.0,       M_PI,    -0.2874,      M_PI}    // Joint 6
+        {0.0,       M_PI,    -0.2474,      M_PI}    // Joint 6
     };
     
     // Joint limits (radians) - using original limits to avoid issues

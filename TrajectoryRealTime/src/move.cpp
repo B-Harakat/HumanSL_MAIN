@@ -277,21 +277,19 @@ void joint_control_execution(k_api::Base::BaseClient* base, k_api::BaseCyclic::B
 
             }
 
-            std::cout << "Current target q_d: ";
-            for(auto& i : q_d){
-                std::cout << i << ", ";
-            }
-            std::cout << "\n";
+            // std::cout << "Current target q_d: ";
+            // for(auto& i : q_d){
+            //     std::cout << i << ", ";
+            // }
+            // std::cout << "\n";
             
-            // robot.setBaseOrientation(base_frame_snapshot.rotation().matrix());
-
             // joint_impedance_control_single(base, base_cyclic, actuator_config, base_feedback, base_command, robot, q_d, dq_d, ddq_d, last_dq, K_joint_diag, q_cur, control_frequency);
             joint_position_control_single(base, base_cyclic, base_feedback, base_command,q_d, q_cur);
             record.target_trajectory.push_back(q_d);
             record.actual_trajectory.push_back(q_cur);
 
-            // first_call = true;
-            // chicken_trigger = false;
+            first_call = true;
+            chicken_trigger = false;
         }
         else{
             
@@ -733,7 +731,19 @@ bool chicken_head_control_single(k_api::Base::BaseClient* base, k_api::BaseCycli
     // u = chicken_head_velocity_controller(robot, q_rad, dq, T_B7, p_d, K_d_diag, dt);
     v = chicken_head_velocity_controller(robot, q_rad, dq, T_B7, p_d, K_d_diag, dt);
 
+    std::cout << "velocity, should be in deg: ";
+    for(auto& i : v){
+        std::cout << i << ", ";
+    }
+    std::cout << "\n";
+
     VectorXd q_target = q + v*dt;
+
+    // try only rpoprotional gain first, increase until ok
+    // then add a bit of integral gain
+    // check error calculaiton logic
+    // try nicer (loinear) base frame displacement
+    // compute base frame velocoity, try to ocmpensation the ee velocity in world frmae.
 
     for(int i = 0; i < 7; i++) {
         base_command.mutable_actuators(i)->set_position(q_target[i]);

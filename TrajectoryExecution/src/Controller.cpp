@@ -672,6 +672,7 @@ VectorXd Controller::chicken_head_velocity_controller(Dynamics& robot,
     
     // Convert to joint velocities
     VectorXd dq_desired = pinv_jacobian * dp_desired;
+    VectorXd dq_desired_deg = dq_desired * (180.0/M_PI);
     
-    return dq_desired;   
+    return dq_desired_deg;   
 }

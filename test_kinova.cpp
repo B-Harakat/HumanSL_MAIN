@@ -22,34 +22,9 @@ int main(){
     std::string c3d_file_path = "../config/left_01_03.c3d";
     std::string parameters_path = "../config/parameters.yaml";
 
-    // Load trajectory parameters from YAML
-    YAML::Node config = YAML::LoadFile(parameters_path);
-    auto traj_params = config["trajectory_parameters"];
-    
-    // Right approach phase parameters
-    double right_approach_offset_y = traj_params["right_approach_phase"]["offset_from_human_y"].as<double>();
-    double right_approach_offset_z = traj_params["right_approach_phase"]["offset_from_tube_z"].as<double>();
-    double right_approach_time_sec = traj_params["right_approach_phase"]["time_sec"].as<double>();
-
-    // Right grasp phase parameters
-    double right_grasp_offset_y = traj_params["right_grasp_phase"]["offset_from_human_y"].as<double>();
-    double right_grasp_offset_z = traj_params["right_grasp_phase"]["offset_from_tube_z"].as<double>();
-    double right_grasp_time_sec = traj_params["right_grasp_phase"]["time_sec"].as<double>();
-    float right_grasp_gripper_pos = traj_params["right_grasp_phase"]["gripper_jaw_displacement"].as<float>();
-    
-    // Right shoulder phase parameters
-    double right_shoulder_time_sec = traj_params["right_shoulder_phase"]["time_sec"].as<double>();
-    double right_shoulder_percentage = traj_params["right_shoulder_phase"]["percentage"].as<double>();
-    double right_shoulder_height = traj_params["right_shoulder_phase"]["height"].as<double>();
-    
-    // Right disengage phase parameters
-    double right_disengage_offset_y = traj_params["right_disengage_phase_1"]["offset_from_human_y"].as<double>();
-    double right_disengage_offset_z = traj_params["right_disengage_phase_1"]["offset_from_tube_z"].as<double>();
-    double right_disengage_time_sec = traj_params["right_disengage_phase_1"]["time_sec"].as<double>();
-
     
     // IP address for right arm
-    std::string right_ip_address = "192.168.1.10";
+    std::string right_ip_address = "192.168.1.9";
 
     // Create API objects
     auto error_callback = [](k_api::KError err){
@@ -128,7 +103,7 @@ int main(){
     std::atomic<int> replan_counter{0};
     std::mutex trajectory_mutex;  // For thread-safe trajectory replacement
     
-    JointTrajectory joint_trajectory;
+    JointTrajectory right_joint_trajectory;
     JointTrajectory new_joint_trajectory;  // Buffer for new trajectory
     TaskTrajectory task_trajectory;
 
@@ -138,7 +113,7 @@ int main(){
     std::vector<double> q_cur_right_snapshot; 
 
     std::vector<double> q_init_right(7);
-    q_init_right= {90,45,15,15,1,1,1}; // in deg
+    q_init_right= {-90,45,-15,15,1,1,1}; // in deg
 
     Gen3Arm right_arm(right_ip_address, robot_urdf_path, dh_params_path, joint_limit_path);
 

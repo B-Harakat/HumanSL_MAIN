@@ -69,7 +69,7 @@ MatrixXd Jacobian::jaco_m(const VectorXd& q) {
 
     T_7Tool << 1, 0, 0, 0,
             0, -1, 0, 0,
-            0, 0, -1, -0.1815,
+            0, 0, -1, -0.1415,
             0, 0, 0, 1;
 
     z0 << 0, 0, 1;

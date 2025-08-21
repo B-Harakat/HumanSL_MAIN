@@ -27,7 +27,7 @@
 #include "ViconInterface.h"
 #include "utils.h"
 
-void updateTubeInfo(TubeInfo& tube_info, std::vector<MarkerData>& tube);
+void updateTubeInfo(TubeInfo& tube_info, std::vector<MarkerData>& tube_tip, std::vector<MarkerData>& tube_end);
 
 void updateHumanInfo(HumanInfo& human_info, std::vector<MarkerData>& human);
 

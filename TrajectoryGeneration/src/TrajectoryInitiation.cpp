@@ -188,9 +188,9 @@ gtsam::Values InitializeTrajectory::initJointTrajectoryFromTarget(
     int target_count = 0;
         
     int success_count = 0;
-    for(int i = 0; i < 5; i++){
+    for(int i = 0; i < 10; i++){
         gtsam::Vector end_conf; 
-        std::cout << "  Attempt " << (i+1) << "/5: ";
+        std::cout << "  Attempt " << (i+1) << "/10: ";
         if(solveIK(end_pose, base_pose, start_conf, end_conf, 100, 0.25)){
             wrapAngles(end_conf, start_conf);
             end_confs.push_back(end_conf);
@@ -206,20 +206,19 @@ gtsam::Values InitializeTrajectory::initJointTrajectoryFromTarget(
             std::cout << "FAILED\n";
         }
         
-        std::cout << "  Target " << target_count << " results: " << success_count << "/5 success\n";
     }
-    std::cout << "SSSSSSSStart Joint Conf: ";
-    for (auto& f : start_conf){
-        std::cout << f <<", ";
-    }
-    std::cout << "\n";
-    std::cout << "BBBBBBBBBBBBBBBBest Joint Conf: ";
-    for (auto& d : end_confs[best_idx]){
-        std::cout << d <<", ";
-    }
+    // std::cout << "SSSSSSSStart Joint Conf: ";
+    // for (auto& f : start_conf){
+    //     std::cout << f <<", ";
+    // }
+    // std::cout << "\n";
+    // std::cout << "BBBBBBBBBBBBBBBBest Joint Conf: ";
+    // for (auto& d : end_confs[best_idx]){
+    //     std::cout << d <<", ";
+    // }
    
     
-    std::cout << "\nTotal targets tried: " << target_count << ", solutions found: " << end_confs.size() << "\n";
+    // std::cout << "\nTotal targets tried: " << target_count << ", solutions found: " << end_confs.size() << "\n";
     
     // Removed old diagnostic code - using new tube-aware approach
     
@@ -245,28 +244,28 @@ gtsam::Values InitializeTrajectory::initJointTrajectoryFromTarget(
         for (size_t i = 0; i <= total_time_step; i++)
             init_values.insert(gtsam::Symbol('v', i), avg_vel);
 
-        std::cout << "start conf: ";
-        for (auto& data : start_conf){
-            std::cout << data <<" ";
-        }
-        std::cout <<"\n";
+        // std::cout << "start conf: ";
+        // for (auto& data : start_conf){
+        //     std::cout << data <<" ";
+        // }
+        // std::cout <<"\n";
 
-        std::cout << "end pose: " << end_pose <<"\n";
-        std::cout << "base_pose: " << base_pose <<"\n";
+        // std::cout << "end pose: " << end_pose <<"\n";
+        // std::cout << "base_pose: " << base_pose <<"\n";
 
         return init_values;
         }
     
     else {
 
-        std::cout << "start conf: ";
-        for (auto& data : start_conf){
-            std::cout << data <<" ";
-        }
-        std::cout <<"\n";
+        // std::cout << "start conf: ";
+        // for (auto& data : start_conf){
+        //     std::cout << data <<" ";
+        // }
+        // std::cout <<"\n";
 
-        std::cout << "end pose: " << end_pose <<"\n";
-        std::cout << "base_pose: " << base_pose <<"\n";
+        // std::cout << "end pose: " << end_pose <<"\n";
+        // std::cout << "base_pose: " << base_pose <<"\n";
         throw std::runtime_error("Failed to solve IK for end pose");
     }
 

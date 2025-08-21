@@ -1,77 +1,101 @@
 #include "ViconInfo.h"
 
 
-void updateTubeInfo(TubeInfo& tube_info, std::vector<MarkerData>& tube){
-    std::vector<Eigen::Vector3d> tubePoints;
+void updateTubeInfo(TubeInfo& tube_info, std::vector<MarkerData>& tube_tip, std::vector<MarkerData>& tube_end, std::vector<MarkerData>& tube_mid){
+    std::vector<Eigen::Vector3d> tube_tip_pts;
+    std::vector<Eigen::Vector3d> tube_end_pts;
+    std::vector<Eigen::Vector3d> tube_mid_pts;
     
 
-    for(auto marker : tube){
-        double x = marker.x/1000; 
-        double y = marker.y/1000;
-        double z = marker.z/1000;
-        tubePoints.push_back(Eigen::Vector3d(x,y,z));
-    }
-
-    tube_info.tube_points = tubePoints;
-
-    // Perform PCA analysis
+    bool tube_tip_occluded = false;
+    bool tube_end_occluded = false;
     
-    TubeInfo result;
-
-    int n = tubePoints.size();
-
-    result.centroid = Eigen::Vector3d::Zero();
-    for (const auto& p : tubePoints) {
-        result.centroid += p;
-    }
-    result.centroid /= n;
-
-
-    
-    
-    Eigen::MatrixXd centered(n, 3);
-    for (int i = 0; i < n; ++i) {
-        centered.row(i) = (tubePoints[i] - result.centroid).transpose();
-    }
-
-    // Compute covariance matrix
-    Eigen::Matrix3d covariance = centered.transpose() * centered / (n - 1);
-
-    // Eigenvalue decomposition
-    Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> solver(covariance);
-
-    // The eigenvector with largest eigenvalue is the principal axis
-    int maxEigenIndex = 0;
-    for (int i = 1; i < 3; ++i) {
-        if (solver.eigenvalues()(i) > solver.eigenvalues()(maxEigenIndex)) {
-            maxEigenIndex = i;
+    for(auto marker : tube_tip){
+        if(marker.occluded){
+            tube_tip_occluded = true;
+        } else {
+            double x = marker.x/1000; 
+            double y = marker.y/1000;
+            double z = marker.z/1000;
+            tube_tip_pts.push_back(Eigen::Vector3d(x,y,z));
         }
     }
 
-    result.direction = solver.eigenvectors().col(maxEigenIndex);
-
-    // If y-component is negative, flip the axis orientation about z-axis by 180 degrees
-    if (result.direction.y() < 0) {
-        result.direction.x() = -result.direction.x();
-        result.direction.y() = -result.direction.y();
-        // z-component remains unchanged
+    for(auto marker : tube_end){
+        if(marker.occluded){
+            tube_end_occluded = true;
+        } else {
+            double x = marker.x/1000; 
+            double y = marker.y/1000;
+            double z = marker.z/1000;
+            tube_end_pts.push_back(Eigen::Vector3d(x,y,z));
+        }
     }
 
-    // Calculate tube length by projecting points onto axis
-    double minProj = std::numeric_limits<double>::max();
-    double maxProj = std::numeric_limits<double>::lowest();
-    
-    for (const auto& p : tubePoints) {
-        Eigen::Vector3d centered_point = p - result.centroid;
-        double projection = centered_point.dot(result.direction);
-        minProj = std::min(minProj, projection);
-        maxProj = std::max(maxProj, projection);
+    for(auto marker : tube_mid){
+        if(!marker.occluded){
+            double x = marker.x/1000; 
+            double y = marker.y/1000;
+            double z = marker.z/1000;
+            tube_mid_pts.push_back(Eigen::Vector3d(x,y,z));
+        }
+    }
+
+    // Average tube tip points
+    Eigen::Vector3d avg_tube_tip = Eigen::Vector3d::Zero();
+    if (!tube_tip_pts.empty()) {
+        for (const auto& pt : tube_tip_pts) {
+            avg_tube_tip += pt;
+        }
+        avg_tube_tip /= tube_tip_pts.size();
     }
     
-    result.length = maxProj - minProj;
+    // Average tube end points
+    Eigen::Vector3d avg_tube_end = Eigen::Vector3d::Zero();
+    if (!tube_end_pts.empty()) {
+        for (const auto& pt : tube_end_pts) {
+            avg_tube_end += pt;
+        }
+        avg_tube_end /= tube_end_pts.size();
+    }
+
+    // Average tube mid points
+    Eigen::Vector3d avg_tube_mid = Eigen::Vector3d::Zero();
+    if (!tube_mid_pts.empty()) {
+        for (const auto& pt : tube_mid_pts) {
+            avg_tube_mid += pt;
+        }
+        avg_tube_mid /= tube_mid_pts.size();
+    }
+    
+    TubeInfo result;
+    
+    // Calculate centroid as midpoint between averaged tip and end points
+    result.centroid = ((avg_tube_tip + avg_tube_end) / 2.0 );
+    
+    // Calculate direction vector based on occlusion status
+    if(tube_end_occluded && !tube_mid_pts.empty()){
+        // If tube_end is occluded, use tube_mid and tube_tip
+        result.direction = (avg_tube_mid - avg_tube_tip).normalized();
+    } else if(tube_tip_occluded && !tube_mid_pts.empty()){
+        // If tube_tip is occluded, use tube_mid and tube_end
+        result.direction = (avg_tube_end - avg_tube_mid).normalized();
+    } else {
+        // Default: calculate direction from averaged end to averaged tip
+        result.direction = (avg_tube_end - avg_tube_tip).normalized();
+    }
+    
+    // Ensure y-axis is always positive
+    if(result.direction.y() < 0){
+        result.direction = -result.direction;
+    }
+    
+    // Calculate tube length as distance between averaged points
+    result.length = (avg_tube_tip - avg_tube_end).norm();
 
     // remove when camera is fixed
-    result.centroid[2] += 0.04;
+    result.centroid[2] += 0.0;
+    result.centroid[0] -= 0.0;
 
     tube_info = result;
     
@@ -149,6 +173,8 @@ void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose
     
     static int counter = 0;
     static std::deque<TubeInfo> tube_info_array;
+    static std::deque<gtsam::Pose3> left_base_array;
+    static std::deque<gtsam::Pose3> right_base_array;
 
     std::unique_lock<std::shared_mutex> vicon_lock(vicon_data_mutex);
 
@@ -179,13 +205,31 @@ void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose
     left_tip_data.push_back(vicon.getMarkerPosition("left_tip4"));
 
 
-    std::vector<MarkerData> tube  = vicon.getMarkerPositions("tube");
+    std::vector<MarkerData> tube_tip;
+    tube_tip.push_back(vicon.getMarkerPosition("tube_tip1"));
+    tube_tip.push_back(vicon.getMarkerPosition("tube_tip2"));
+    tube_tip.push_back(vicon.getMarkerPosition("tube_tip3"));
+
+
+    std::vector<MarkerData> tube_end;
+    tube_end.push_back(vicon.getMarkerPosition("tube_end1"));
+    tube_end.push_back(vicon.getMarkerPosition("tube_end2"));
+    tube_end.push_back(vicon.getMarkerPosition("tube_end3"));
+
+    std::vector<MarkerData> tube_mid;
+    tube_mid.push_back(vicon.getMarkerPosition("tube_mid1"));
+    tube_mid.push_back(vicon.getMarkerPosition("tube_mid2"));
+    tube_mid.push_back(vicon.getMarkerPosition("tube_mid3"));
+    
+    
+
+
     std::vector<MarkerData> human = vicon.getMarkerPositions("human");
     std::vector<MarkerData> target= vicon.getMarkerPositions("target");
     
     TubeInfo tube_info_snapshot;
 
-    updateTubeInfo(tube_info_snapshot, tube);
+    updateTubeInfo(tube_info_snapshot, tube_tip, tube_end, tube_mid);
     updateHumanInfo(human_info, human);
     updateTargetInfo(target_info, target);
 
@@ -266,20 +310,174 @@ void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose
 
 
     // Estimate left base pose if not occluded
-    if (!left_base_occluded && !right_base_occluded) {
+    gtsam::Pose3 left_base_current, right_base_current;
+    bool pose_updated = false;
 
+    if (!left_base_occluded && !right_base_occluded){
         gtsam::Pose3 left_base_guess2 = updatePoseInfo2(left_base_data, right_base_data.front());
         gtsam::Pose3 right_base_guess2 = updatePoseInfo2(right_base_data, left_base_data.front());
 
-        left_base = left_base_guess2;
-        right_base = right_base_guess2;
+        left_base_current = left_base_guess2;
+        right_base_current = right_base_guess2;
+        pose_updated = true;
+
+    }
+    
+    else if (!left_base_occluded || !right_base_occluded) {
+
+        gtsam::Pose3 right_base_guess2;
+        gtsam::Pose3 left_base_guess2;
+
+        if(left_base_occluded){
+
+            // Find any non-occluded marker in left_base_data
+            MarkerData non_occluded_left_marker = left_base_data.front(); // fallback
+            for (const auto& marker : left_base_data) {
+                if (!marker.occluded) {
+                    non_occluded_left_marker = marker;
+                    break;
+                }
+            }
+            
+            right_base_guess2 = updatePoseInfo2(right_base_data, non_occluded_left_marker);
+
+            // Calculate left_base_guess2 using fixed transformation between left and right base
+            // The transformation is fixed, so we can derive left from right
+            gtsam::Pose3 left_to_right_transform = right_base.compose(left_base.inverse());
+            left_base_guess2 = left_to_right_transform.inverse().compose(right_base_guess2);
+
+        }
+        if(right_base_occluded){
+            // Find any non-occluded marker in right_base_data
+            MarkerData non_occluded_right_marker = right_base_data.front(); // fallback
+            for (const auto& marker : right_base_data) {
+                if (!marker.occluded) {
+                    non_occluded_right_marker = marker;
+                    break;
+                }
+            }
+            
+            left_base_guess2 = updatePoseInfo2(left_base_data, non_occluded_right_marker);
+
+            // Calculate right_base_guess2 using fixed transformation between left and right base
+            // The transformation is fixed, so we can derive right from left
+            gtsam::Pose3 left_to_right_transform = right_base.compose(left_base.inverse());
+            right_base_guess2 = left_to_right_transform.compose(left_base_guess2);
+        }
+
+        left_base_current = left_base_guess2;
+        right_base_current = right_base_guess2;
+        pose_updated = true;
     }
     else if(!left_tip_occluded && !right_tip_occluded){
         gtsam::Pose3 left_base_guess1 = updatePoseInfo1(left_tip_data, dh_params, left_conf);
         gtsam::Pose3 right_base_guess1 = updatePoseInfo1(right_tip_data, dh_params, right_conf);
 
-        left_base = left_base_guess1;
-        right_base = right_base_guess1;
+        left_base_current = left_base_guess1;
+        right_base_current = right_base_guess1;
+        pose_updated = true;
+    }
+
+    // Add poses to moving average arrays if pose was updated and passes filter
+    if (pose_updated) {
+        bool add_left = true;
+        bool add_right = true;
+        
+        // Filter based on rotation difference from current average
+        if (!left_base_array.empty()) {
+            // Calculate current average rotation for left base
+            gtsam::Vector3 avg_left_rotation_vector = gtsam::Vector3::Zero();
+            for (const auto& pose : left_base_array) {
+                gtsam::Vector3 rotation_vector = gtsam::Rot3::Logmap(pose.rotation());
+                avg_left_rotation_vector += rotation_vector;
+            }
+            avg_left_rotation_vector /= left_base_array.size();
+            gtsam::Rot3 avg_left_rotation = gtsam::Rot3::Expmap(avg_left_rotation_vector);
+            
+            // Check rotation difference
+            gtsam::Rot3 rotation_diff = avg_left_rotation.inverse() * left_base_current.rotation();
+            double rotation_angle = gtsam::Rot3::Logmap(rotation_diff).norm();
+            
+            // Don't add if rotation differs by more than 0.3 radians (~17 degrees)
+            if (rotation_angle > 0.3) {
+                add_left = false;
+            }
+        }
+        
+        if (!right_base_array.empty()) {
+            // Calculate current average rotation for right base
+            gtsam::Vector3 avg_right_rotation_vector = gtsam::Vector3::Zero();
+            for (const auto& pose : right_base_array) {
+                gtsam::Vector3 rotation_vector = gtsam::Rot3::Logmap(pose.rotation());
+                avg_right_rotation_vector += rotation_vector;
+            }
+            avg_right_rotation_vector /= right_base_array.size();
+            gtsam::Rot3 avg_right_rotation = gtsam::Rot3::Expmap(avg_right_rotation_vector);
+            
+            // Check rotation difference
+            gtsam::Rot3 rotation_diff = avg_right_rotation.inverse() * right_base_current.rotation();
+            double rotation_angle = gtsam::Rot3::Logmap(rotation_diff).norm();
+            
+            // Don't add if rotation differs by more than 0.3 radians (~17 degrees)
+            if (rotation_angle > 0.3) {
+                add_right = false;
+            }
+        }
+        
+        if (add_left) {
+            left_base_array.push_back(left_base_current);
+        }
+        if (add_right) {
+            right_base_array.push_back(right_base_current);
+        }
+    }
+
+    // Maintain array size for moving average (similar to tube_info_array)
+    if (left_base_array.size() >= 100) {
+        left_base_array.pop_front();
+    }
+    if (right_base_array.size() >= 100) {
+        right_base_array.pop_front();
+    }
+
+    // Calculate moving average poses every 10 counter cycles (similar to tube_info)
+    if (left_base_array.size() >= 100 && counter == 0) {
+        // Calculate average left_base pose
+        gtsam::Point3 avg_left_translation = gtsam::Point3(0, 0, 0);
+        gtsam::Vector3 avg_left_rotation_vector = gtsam::Vector3::Zero();
+        
+        for (const auto& pose : left_base_array) {
+            avg_left_translation = avg_left_translation + pose.translation();
+            gtsam::Vector3 rotation_vector = gtsam::Rot3::Logmap(pose.rotation());
+            avg_left_rotation_vector += rotation_vector;
+        }
+        
+        avg_left_translation = avg_left_translation / 100.0;
+        avg_left_rotation_vector /= 100.0;
+        gtsam::Rot3 avg_left_rotation = gtsam::Rot3::Expmap(avg_left_rotation_vector);
+        
+        left_base = gtsam::Pose3(avg_left_rotation, avg_left_translation);
+
+        // Calculate average right_base pose
+        gtsam::Point3 avg_right_translation = gtsam::Point3(0, 0, 0);
+        gtsam::Vector3 avg_right_rotation_vector = gtsam::Vector3::Zero();
+        
+        for (const auto& pose : right_base_array) {
+            avg_right_translation = avg_right_translation + pose.translation();
+            gtsam::Vector3 rotation_vector = gtsam::Rot3::Logmap(pose.rotation());
+            avg_right_rotation_vector += rotation_vector;
+        }
+        
+        avg_right_translation = avg_right_translation / 100.0;
+        avg_right_rotation_vector /= 100.0;
+        gtsam::Rot3 avg_right_rotation = gtsam::Rot3::Expmap(avg_right_rotation_vector);
+        
+        right_base = gtsam::Pose3(avg_right_rotation, avg_right_translation);
+    }
+    else if (pose_updated) {
+        // Use current poses if we don't have enough samples yet
+        left_base = left_base_current;
+        right_base = right_base_current;
     }
 
     // // Estimate right base pose if not occluded

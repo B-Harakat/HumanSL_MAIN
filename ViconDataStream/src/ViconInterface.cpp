@@ -90,6 +90,7 @@ MarkerData ViconInterface::getMarkerPosition(const std::string& markerName) {
         
         for (unsigned int j = 0; j < markerCount; ++j) {
             std::string currentMarkerName = client_->GetMarkerName(subjectName, j).MarkerName;
+            // std::cout << currentMarkerName << "\n";
             if (currentMarkerName == markerName) {
                 Output_GetMarkerGlobalTranslation translation = 
                     client_->GetMarkerGlobalTranslation(subjectName, markerName);

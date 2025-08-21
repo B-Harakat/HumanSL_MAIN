@@ -135,6 +135,36 @@ gtsam::Pose3 Gen3Arm::installtion_pose(const gtsam::Point3& target_info,
     return target_pose;
 }
 
+gtsam::Pose3 Gen3Arm::over_head_pipe_pose(const gtsam::Pose3& other_arm_info,             
+                            HumanInfo& human_info,
+                            const double& offset_from_human_max_y,
+                            const double& offset_from_tube_z) {
+    
+    gtsam::Point3 other_position = other_arm_info.translation(); 
+    double target_y = human_info.bounds.max_y + offset_from_human_max_y;
+    
+    auto angle = 0.0; // rad
+    double offset_x = sin(angle) * offset_from_tube_z;
+    double offset_z = cos(angle) * offset_from_tube_z;
+
+    double target_x = other_position.x() + offset_x;
+    double target_z = other_position.z() - offset_z;
+
+    
+    gtsam::Rot3 base_orientation = gtsam::Rot3::Rz(M_PI); // 180 degrees about z-axis
+    gtsam::Rot3 target_orientation;
+    
+    target_orientation = base_orientation * gtsam::Rot3::Ry(angle);  // 30 degrees about new y-axis
+    
+    
+    gtsam::Point3 target_position(target_x, target_y,
+    target_z);
+
+    gtsam::Pose3 target_pose(target_orientation, target_position);
+    
+    return target_pose;
+}
+
 
 
 void Gen3Arm::plan_joint(JointTrajectory& trajectory, 
@@ -179,7 +209,6 @@ void Gen3Arm::plan_joint(JointTrajectory& trajectory,
 
     while(true){
 
-        
             auto init_start_time = std::chrono::high_resolution_clock::now();
 
             gtsam::Values init_values = initJointTrajectoryFromVicon(start_conf, tube_info, human_info, 
@@ -207,7 +236,7 @@ void Gen3Arm::plan_joint(JointTrajectory& trajectory,
 
             counter++;
             best_final_error = (best_final_error > result.final_error) ? result.final_error : best_final_error;
-            if(counter > 3) break;
+            if(counter > 10) break;
         
     }
 
@@ -222,7 +251,92 @@ void Gen3Arm::plan_joint(JointTrajectory& trajectory,
 
     trajectory = convertTrajectory<JointTrajectory>(result, dt); 
 
-    if(counter > 3){ 
+    if(counter > 10){ 
+            visualizeTrajectory(trajectory.pos, *arm_model, dataset_logs, base_pose);
+            saveTrajectoryResultToYAML(result,"failed_plan");
+            throw std::runtime_error((std::stringstream{} << "Could not generate good enough trajectory, best final error: " << best_final_error << "\n").str());
+    }
+}
+
+
+void Gen3Arm::plan_joint(JointTrajectory& trajectory, 
+                     std::vector<double>& current_joint_pos, 
+                     const gtsam::Pose3& base_pose, 
+                     const gtsam::Pose3& target_pose, 
+                     double total_time_sec,
+                     size_t total_time_step,
+                     int control_frequency) {
+    
+    std::unique_ptr<gpmp2::ArmModel> arm_model = createArmModel(base_pose, dh_params_);
+    arm_model_logs  = *arm_model;
+
+    visualizeTrajectoryStatic(current_joint_pos, arm_model_logs, dataset_logs, base_pose);
+    // std::cout << "Verify starting condition, press ENTER to proceed with IK solving. \n";
+    // std::cin.get();
+
+    gtsam::Vector start_conf = Eigen::Map<const Eigen::VectorXd>(
+        current_joint_pos.data(), current_joint_pos.size()) * M_PI / 180.0;
+
+    gtsam::Vector start_vel = gtsam::Vector::Zero(7);
+
+
+    double dt = 1.0 / control_frequency;
+
+    TrajectoryResult result;
+    
+    int counter = 0;
+    double best_final_error = 50000;
+
+    auto start_time = std::chrono::high_resolution_clock::now();
+    
+    // Initialize cumulative timing variables
+    std::chrono::milliseconds total_initiation_duration(0);
+    std::chrono::milliseconds total_optimization_duration(0);
+
+    while(true){
+
+            auto init_start_time = std::chrono::high_resolution_clock::now();
+
+            gtsam::Values init_values = initJointTrajectoryFromTarget(start_conf, target_pose, base_pose, 
+                                                                     total_time_step);
+            
+            auto init_end_time = std::chrono::high_resolution_clock::now();
+            auto initiation_duration = std::chrono::duration_cast<std::chrono::milliseconds>(init_end_time - init_start_time);
+            total_initiation_duration += initiation_duration;
+                                                
+            std::cout << "Target Pose: " << target_pose << "\n";
+            // Use the actual best pose found by our IK search (not a temporary pose)
+            
+            auto optimization_start_time = std::chrono::high_resolution_clock::now();
+            result = optimizeJointTrajectory(
+                                    *arm_model, *sdf, init_values, target_pose, 
+                                    start_conf, start_vel, pos_limits_, vel_limits_, 
+                                    total_time_step, total_time_sec, dt);
+            
+            auto optimization_end_time = std::chrono::high_resolution_clock::now();
+            auto optimization_duration = std::chrono::duration_cast<std::chrono::milliseconds>(optimization_end_time - optimization_start_time);
+            total_optimization_duration += optimization_duration;
+
+            if(result.final_error < 1000.0) break;
+
+            counter++;
+            best_final_error = (best_final_error > result.final_error) ? result.final_error : best_final_error;
+            if(counter > 10) break;
+        
+    }
+
+    
+    result_logs = result;
+    target_pose_logs = target_pose;
+
+    result.initiation_duration = total_initiation_duration;
+    result.optimization_duration = total_optimization_duration;
+
+    std::cout << "Final Error: " << result.final_error << "\n";
+
+    trajectory = convertTrajectory<JointTrajectory>(result, dt); 
+
+    if(counter > 10){ 
             visualizeTrajectory(trajectory.pos, *arm_model, dataset_logs, base_pose);
             saveTrajectoryResultToYAML(result,"failed_plan");
             throw std::runtime_error((std::stringstream{} << "Could not generate good enough trajectory, best final error: " << best_final_error << "\n").str());
@@ -586,7 +700,7 @@ void Gen3Arm::replan(JointTrajectory& current_trajectory,
                     tube_info_snapshot,
                     human_info_snapshot,
                     target_pose,
-                    0.5, 0.12,  // offset parameters
+                    0.55, 0.12,  // offset parameters
                     remaining_time_sec, total_time_step, control_frequency    // time and timestep parameters
                 )){
                     std::cout << "New trajectory generated successfully." << std::endl;
@@ -637,7 +751,8 @@ void Gen3Arm::plan_task(JointTrajectory& trajectory,
                     const int total_time_step,
                     const double percentage,
                     const double height,
-                    const int control_frequency) {
+                    const int control_frequency,
+                    bool target_pose_only) {
     
     std::unique_ptr<gpmp2::ArmModel> arm_model = createArmModel(base_pose, dh_params_);
     arm_model_logs  = *arm_model;
@@ -671,15 +786,37 @@ void Gen3Arm::plan_task(JointTrajectory& trajectory,
             std::deque<gtsam::Pose3> pose_trajectory;
             gtsam::Values init_values;
             auto init_start_time = std::chrono::high_resolution_clock::now();
-            try{
-                init_values = 
-                        initTaskSpaceTrajectory(start_pose, end_pose, 
-                                base_pose, start_conf, pose_trajectory,
-                                    percentage, height, total_time_step); 
-                                                                    
+
+            if(target_pose_only){
+                try{
+                    init_values = 
+                            initJointTrajectoryFromTarget(start_conf, end_pose, 
+                                    base_pose, total_time_step);
+                    
+                    // Fill pose_trajectory with identity poses up to total_time_step + 1 size
+                    pose_trajectory.resize(total_time_step + 1);
+                    for (int i = 0; i < total_time_step; ++i) {
+                        pose_trajectory[i] = gtsam::Pose3();
+                    }
+                    // Set the last entry to end_pose
+                    pose_trajectory[total_time_step] = end_pose;
+                    
+                }
+                catch(const std::exception& e){
+                    continue;
+                }
             }
-            catch(const std::exception& e){
-                continue;
+            else{
+                try{
+                    init_values = 
+                            initTaskSpaceTrajectory(start_pose, end_pose, 
+                                    base_pose, start_conf, pose_trajectory,
+                                        percentage, height, total_time_step); 
+                                                                        
+                }
+                catch(const std::exception& e){
+                    continue;
+                }
             }
 
             auto init_end_time = std::chrono::high_resolution_clock::now();
@@ -693,7 +830,7 @@ void Gen3Arm::plan_task(JointTrajectory& trajectory,
             result = optimizeTaskTrajectory(
                                     *arm_model, *sdf, init_values, pose_trajectory, 
                                     start_conf, pos_limits_, vel_limits_, 
-                                    total_time_step, total_time_sec, dt);
+                                    total_time_step, total_time_sec, dt, target_pose_only);
             
             auto optimization_end_time = std::chrono::high_resolution_clock::now();
             auto optimization_duration = std::chrono::duration_cast<std::chrono::milliseconds>(optimization_end_time - optimization_start_time);
@@ -703,7 +840,7 @@ void Gen3Arm::plan_task(JointTrajectory& trajectory,
 
             counter++;
             best_final_error = (best_final_error > result.final_error) ? result.final_error : best_final_error;
-            if(counter > 20) break;
+            if(counter > 10) break;
     }
 
     
@@ -783,9 +920,13 @@ void Gen3Arm::plan_cartesian_z(JointTrajectory& trajectory,
         vel *= scale_factor;
     }
     
+    
     // Initialize trajectory
     trajectory.pos.clear();
     trajectory.vel.clear();
+
+    Eigen::VectorXd joint_acc_deg(7);
+    joint_acc_deg << 0,0,0,0,0,0,0;
     
     gtsam::Vector current_joint_conf = start_conf;
     
@@ -822,6 +963,7 @@ void Gen3Arm::plan_cartesian_z(JointTrajectory& trajectory,
         Eigen::VectorXd joint_vel_deg = joint_vel*(180.0/M_PI);
 
         trajectory.vel.push_back(joint_vel_deg);
+        trajectory.acc.push_back(joint_acc_deg);
         
         // Integrate to get joint position
         if (i == 0) {
