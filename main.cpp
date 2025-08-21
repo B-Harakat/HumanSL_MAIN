@@ -200,7 +200,7 @@ bool plan_action(
                 double intermediate_point_percentage = 0.35;
                 double intermediate_point_height = 0.25;
 
-                double move_offset_from_human_max_y = 0.67; // position the gripper furter behind human
+                double move_offset_from_human_max_y = 0.70; // position the gripper furter behind human
                 double move_offset_from_human_mid_x = -0.15; // positive means moving the end pose towards human left
                 double move_offset_from_human_max_z = 0.25;
 
@@ -819,6 +819,7 @@ int main(){
     
     while(left_execution_ongoing_flag.load() || right_execution_ongoing_flag.load()){std::this_thread::sleep_for(std::chrono::milliseconds(10));}
 
+    std::cin.get();
     
     phase_idx.store(9);
     
