@@ -1,6 +1,7 @@
 #include "move.h"
 #include "KinovaTrajectory.h"
 #include "utils.h"
+#include "analytical_ik.h"
 #include <shared_mutex>
 
 using namespace Jacobian;
@@ -243,7 +244,7 @@ void joint_position_control_execution(k_api::Base::BaseClient* base, k_api::Base
     Eigen::VectorXd K_d_diag(6);
     K_d_diag << 500, 500, 500, 200, 200, 200;
 
-    DHParameters_Eigen dh_eigen = createDHParamsEigen(dh_parameters_path);
+    // DHParameters_Eigen dh_eigen = createDHParamsEigen(dh_parameters_path);
     DHParameters dh = createDHParams(dh_parameters_path);
 
     Eigen::VectorXd dp_d_world(6); Eigen::VectorXd ddp_d_world(6);
@@ -262,8 +263,11 @@ void joint_position_control_execution(k_api::Base::BaseClient* base, k_api::Base
 
     auto start_measure = chrono::high_resolution_clock::now();
 
+    std::cout << "derp time: " << iteration_time << "\n";
+
     // ### end chicken head ### 
-    
+    std::cout << motion_flag.load() << "\n";
+
     while(motion_flag.load()){
 
         auto start_control = chrono::high_resolution_clock::now();
@@ -282,7 +286,8 @@ void joint_position_control_execution(k_api::Base::BaseClient* base, k_api::Base
             std::shared_lock<std::shared_mutex> vicon_lock(vicon_data_mutex);
                 base_frame_snapshot = base_frame;
             }
-            
+            // std::cout << "here: " << iteration_time << "\n";
+
             joint_position_control_single(base, base_cyclic, base_feedback, base_command,q_d, q_cur);
             record.target_trajectory.push_back(q_d);
             record.actual_trajectory.push_back(q_cur);
@@ -410,8 +415,8 @@ void joint_impedance_control_execution(k_api::Base::BaseClient* base, k_api::Bas
                                 std::mutex& trajectory_mutex, TrajectoryRecord& record){
     static thread_local int local_counter = 0;
     Eigen::VectorXd K_joint_diag(7);
-    K_joint_diag << 2000,1500,1000,500,500,500,500;
-    K_joint_diag = K_joint_diag / 10;
+    K_joint_diag << 1000,1000,1000,500,500,500,500;
+    K_joint_diag = K_joint_diag;
 
     // Monitor replan flag state
     static thread_local bool previous_replan_state = false;
@@ -424,7 +429,7 @@ void joint_impedance_control_execution(k_api::Base::BaseClient* base, k_api::Bas
 
     // ### chicken head ###
     Eigen::VectorXd K_d_diag(6);
-    K_d_diag << 100, 100, 100, 30, 30, 30;
+    K_d_diag << 500, 500, 500, 100, 100, 100;
 
     K_d_diag = K_d_diag * 3;
 
@@ -479,9 +484,12 @@ void joint_impedance_control_execution(k_api::Base::BaseClient* base, k_api::Bas
                 base_frame_snapshot = base_frame;
             }
             
+            // Rotate base_frame_snapshot by 180 degrees about world x-axis
+            gtsam::Pose3 base_frame_snapshot_gravity = gtsam::Pose3(gtsam::Rot3::Rz(M_PI/2), gtsam::Point3(0,0,0)) * base_frame_snapshot;
+            
             // std::cout << "Rotation matrix passed to setBaseOrientation:\n" 
             //           << base_frame_snapshot.rotation().matrix() << std::endl;
-            robot.setBaseOrientation(base_frame_snapshot.rotation().matrix().transpose());
+            robot.setBaseOrientation(base_frame_snapshot_gravity.rotation().matrix().transpose());
             joint_impedance_control_single(base, base_cyclic, actuator_config, base_feedback, base_command, robot, q_d, dq_d, ddq_d, last_dq, K_joint_diag, q_cur, control_frequency);
             record.target_trajectory.push_back(q_d);
             record.actual_trajectory.push_back(q_cur);
@@ -502,7 +510,7 @@ void joint_impedance_control_execution(k_api::Base::BaseClient* base, k_api::Bas
             if(!chicken_trigger){
                 chicken_trigger = true;
                 target_snapshot = forwardKinematics(dh,start_conf,base_frame_snapshot);
-                Filter::ini_butterworth_pose();
+                Filter::ini_butterworth_velocity();
             }
             
             gtsam::Pose3 target_pose_in_current_base_frame = gtsam::Pose3(gtsam::Rot3::Rx(M_PI), gtsam::Point3(0,0,0)) * (base_frame_snapshot.inverse() * target_snapshot);
@@ -870,7 +878,7 @@ bool chicken_head_velocity_control_single(k_api::Base::BaseClient* base, k_api::
       dq[i] = base_feedback.actuators(i).velocity();
     }
 
-    VectorXd ddq(7);
+
     ddq << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
 
     // std::cout << "Raw joint angles (deg): ";
@@ -1057,6 +1065,35 @@ bool chicken_head_impedance_control_single(k_api::Base::BaseClient* base, k_api:
         for(auto& k : p){std::cout<< k <<", ";}
         std::cout << "\n";
 
+        // Convert desired pose p_d to transformation matrix for IK
+        gtsam::Vector3 pos_desired(p_d[0], p_d[1], p_d[2]);
+        gtsam::Rot3 rot_desired = gtsam::Rot3::RzRyRx(p_d[5], p_d[4], p_d[3]); // RPY order
+        gtsam::Pose3 desired_pose = gtsam::Pose3(rot_desired, pos_desired);
+        
+        // Convert to Eigen matrix for analytical IK
+        Eigen::Matrix4d target_pose = desired_pose.matrix();
+        Eigen::Matrix4d base_transform = identity_pose.matrix();
+        
+        // Use current joint configuration as seed for IK
+        Eigen::Vector<double, 7> seed_config = q_rad;
+        
+        // Solve inverse kinematics to find desired joint positions
+        analytical_ik::IKSolution ik_solution = analytical_ik::AnalyticalIKSolver::solveBestIK(
+            target_pose, base_transform, seed_config, 5);
+        
+        VectorXd q_desired(7);
+        if (ik_solution.is_valid) {
+            q_desired = ik_solution.joint_angles;
+            // Convert to degrees for position control
+            q_desired = q_desired * (180.0/M_PI);
+            
+            std::cout << "IK solution found, error: " << ik_solution.quality_score << "\n";
+        } else {
+            // Fallback to current position if IK fails
+            q_desired = q;
+            std::cout << "IK failed, holding current position\n";
+        }
+
         // std::cout << "Blocked ...";
         // std::cin.get();
 
@@ -1074,9 +1111,30 @@ bool chicken_head_impedance_control_single(k_api::Base::BaseClient* base, k_api:
 
         start_measure = chrono::high_resolution_clock::now();
         
-        // Impedance controller
-        u = chicken_head_impedance_controller(robot, q_rad, dq, T_B7, p_d, K_d_diag, dt,first_call);
-        // v = chicken_head_velocity_controller(robot, q_rad, dq, T_B7, p_d, K_d_diag, dt);
+        // Calculate dp_measured using finite difference
+        static thread_local VectorXd p_prev = VectorXd::Zero(6);
+        static thread_local bool first_pose_measurement = true;
+        
+        VectorXd dp_measured(6);
+        if (first_pose_measurement) {
+            p_prev = p;
+            dp_measured = VectorXd::Zero(6);
+            first_pose_measurement = false;
+        } else {
+            dp_measured = (p - p_prev) / dt;
+            p_prev = p;
+        }
+        
+        // Use IK solution for joint impedance control
+        VectorXd q_desired_rad = q_desired * (M_PI/180.0);
+        VectorXd dq_desired_rad = VectorXd::Zero(7);  // dummy
+        VectorXd ddq_desired_rad = VectorXd::Zero(7); // dummy
+        VectorXd K_joint_diag(7);
+        K_joint_diag << 1000,1000,1000,500,500,500,500;
+        VectorXd K_integral_diag = K_joint_diag * 0.02;
+        
+        u = joint_impedance_controller(robot, q_rad, dq, ddq, q_desired_rad, dq_desired_rad, ddq_desired_rad, 
+                                        K_joint_diag, K_integral_diag, control_frequency, dt);
 
         // std::cout << "velocity, should be in deg: ";
         // for(auto& i : v){
@@ -1130,21 +1188,25 @@ bool chicken_head_impedance_control_single(k_api::Base::BaseClient* base, k_api:
 
 void updateJointInfo(  k_api::BaseCyclic::BaseCyclicClient* base_cyclic,
                        std::vector<double>& q_cur, 
+                       std::vector<double>& u_cur,
                        std::shared_mutex& joint_mutex) {
     
     std::vector<double> joints(7);
+    std::vector<double> torques(7);
     
     try {
-        // Read joint positions from both arms
+        // Read joint positions and torques from both arms
         k_api::BaseCyclic::Feedback base_feedback = base_cyclic->RefreshFeedback();
         for (int i = 0; i < 7; i++) {
             joints[i] = base_feedback.actuators(i).position();
+            torques[i] = base_feedback.actuators(i).torque();
         }
 
         // Update shared variables with mutex protection
         {
             std::unique_lock<std::shared_mutex> lock(joint_mutex);
             q_cur = joints;
+            u_cur = torques;
         }
         
     } catch (const std::exception& e) {

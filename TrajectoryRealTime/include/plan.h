@@ -98,12 +98,12 @@ public:
                                          const gtsam::Pose3& start_pose,
                                          double offset);
 
-    gtsam::Pose3 over_head_pose(const HumanInfo& human_info,
+    gtsam::Pose3 over_head_pose(const Eigen::Vector3d& head_info,
                                 const gtsam::Pose3& base_pose,             
                                 const gtsam::Pose3& start_pose,
                                 const double& offset_from_base_y,
-                                const double& offset_from_human_mid_x,
-                                const double& offset_from_human_max_z);
+                                const double& offset_from_head_x,
+                                const double& offset_from_head_z);
 
     gtsam::Pose3 over_head_pipe_pose(const gtsam::Pose3& other_arm_info,             
                             HumanInfo& human_info,
@@ -122,7 +122,9 @@ public:
                     double offset_from_tube_z, 
                     double total_time_sec, 
                     size_t total_time_step,
-                    int control_frequency, bool tune_pose = true, double x_tolerance = 0.001);
+                    int control_frequency, bool tune_pose = true, 
+                    double y_pos_tolerance = 0.01,
+                    double y_rot_tolerance = 0.01);
     
     void plan_joint(JointTrajectory& trajectory, 
                      std::vector<double>& current_joint_pos, 
@@ -130,8 +132,9 @@ public:
                      const gtsam::Pose3& target_pose, 
                      double total_time_sec,
                      size_t total_time_step,
-                     int control_frequency);
-
+                     int control_frequency,
+                    double y_pos_tolerance = 0.01,
+                    double y_rot_tolerance = 0.01);
 
     void plan_joint(JointTrajectory& trajectory, 
                      std::vector<double>& current_joint_pos,  
@@ -139,7 +142,9 @@ public:
                      const gtsam::Pose3& base_pose, 
                      double total_time_sec, 
                      size_t total_time_step,
-                     int control_frequency);
+                     int control_frequency,
+                    double y_pos_tolerance = 0.01,
+                    double y_rot_tolerance = 0.01);
     
 
     // Replan joint space trajectory starting from 200ms future state

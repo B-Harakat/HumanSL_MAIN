@@ -52,6 +52,11 @@ gpmp2::BodySphereVector ArmModel::generateArmSpheres(
     spheres.emplace_back(arm_id_offset + 4, sphere_radius, gtsam::Point3(0.0, 0.16, 0.0));
     spheres.emplace_back(arm_id_offset + 4, sphere_radius, gtsam::Point3(0.0, 0.24, 0.0));
     spheres.emplace_back(arm_id_offset + 4, sphere_radius, gtsam::Point3(0.0, 0.31, 0.0));
+
+    spheres.emplace_back(arm_id_offset + 4, sphere_radius * 1, gtsam::Point3(0.0, 0.0, 0.08));
+    spheres.emplace_back(arm_id_offset + 4, sphere_radius * 1, gtsam::Point3(0.0, 0.0, -0.08));
+    spheres.emplace_back(arm_id_offset + 4, sphere_radius * 1, gtsam::Point3(0.08, 0.0, 0.0));
+    spheres.emplace_back(arm_id_offset + 4, sphere_radius * 1, gtsam::Point3(-0.08, 0.0, 0.0));
     
     // Joint 5: No link (d[5] = 0.0) - SKIP
     
@@ -59,21 +64,21 @@ gpmp2::BodySphereVector ArmModel::generateArmSpheres(
     spheres.emplace_back(arm_id_offset + 6, sphere_radius, gtsam::Point3(0.0, 0.0, -0.14));
     spheres.emplace_back(arm_id_offset + 6, sphere_radius, gtsam::Point3(0.0, 0.0, -0.20));
     spheres.emplace_back(arm_id_offset + 6, sphere_radius, gtsam::Point3(0.0, 0.0, -0.25));
-    spheres.emplace_back(arm_id_offset + 6, sphere_radius, gtsam::Point3(0.0, 0.0, -0.30));
+
 
     // Gripper/End-effector spheres 
     // spheres.emplace_back(arm_id_offset + 6, sphere_radius*0.4, gtsam::Point3(0.07, 0.0, 0.04));
     // spheres.emplace_back(arm_id_offset + 6, sphere_radius*0.4, gtsam::Point3(-0.07, 0.0, 0.04));
-    spheres.emplace_back(arm_id_offset + 6, sphere_radius*0.4, gtsam::Point3(0.05, 0.0, 0.0));
-    spheres.emplace_back(arm_id_offset + 6, sphere_radius*0.4, gtsam::Point3(-0.05, 0.0, 0.0));
-    spheres.emplace_back(arm_id_offset + 6, sphere_radius*0.4, gtsam::Point3(0.05, 0.0, -0.04));
-    spheres.emplace_back(arm_id_offset + 6, sphere_radius*0.4, gtsam::Point3(-0.05, 0.0, -0.04));
-    spheres.emplace_back(arm_id_offset + 6, sphere_radius*0.4, gtsam::Point3(0.07, 0.0, -0.08));
-    spheres.emplace_back(arm_id_offset + 6, sphere_radius*0.4, gtsam::Point3(-0.07, 0.0, -0.08));
-    spheres.emplace_back(arm_id_offset + 6, sphere_radius*0.4, gtsam::Point3(0.07, 0.0, -0.12));
-    spheres.emplace_back(arm_id_offset + 6, sphere_radius*0.4, gtsam::Point3(-0.07, 0.0, -0.12));
-    spheres.emplace_back(arm_id_offset + 6, sphere_radius*0.4, gtsam::Point3(0.05, 0.0, -0.14));
-    spheres.emplace_back(arm_id_offset + 6, sphere_radius*0.4, gtsam::Point3(-0.05, 0.0, -0.14)); 
+    spheres.emplace_back(arm_id_offset + 6, sphere_radius*0.6, gtsam::Point3(0.05, 0.0, 0.0));
+    spheres.emplace_back(arm_id_offset + 6, sphere_radius*0.6, gtsam::Point3(-0.05, 0.0, 0.0));
+    spheres.emplace_back(arm_id_offset + 6, sphere_radius*0.6, gtsam::Point3(0.05, 0.0, -0.04));
+    spheres.emplace_back(arm_id_offset + 6, sphere_radius*0.6, gtsam::Point3(-0.05, 0.0, -0.04));
+    spheres.emplace_back(arm_id_offset + 6, sphere_radius*0.6, gtsam::Point3(0.07, 0.0, -0.08));
+    spheres.emplace_back(arm_id_offset + 6, sphere_radius*0.6, gtsam::Point3(-0.07, 0.0, -0.08));
+    spheres.emplace_back(arm_id_offset + 6, sphere_radius*0.6, gtsam::Point3(0.07, 0.0, -0.12));
+    spheres.emplace_back(arm_id_offset + 6, sphere_radius*0.6, gtsam::Point3(-0.07, 0.0, -0.12));
+    spheres.emplace_back(arm_id_offset + 6, sphere_radius*0.6, gtsam::Point3(0.05, 0.0, -0.14));
+    spheres.emplace_back(arm_id_offset + 6, sphere_radius*0.6, gtsam::Point3(-0.05, 0.0, -0.14)); 
     spheres.emplace_back(arm_id_offset + 6, sphere_radius*0.8, gtsam::Point3(0.0, 0.05, -0.15));    
 
     

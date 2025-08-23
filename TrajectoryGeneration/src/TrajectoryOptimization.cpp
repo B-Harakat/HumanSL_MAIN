@@ -13,7 +13,8 @@ TrajectoryResult OptimizeTrajectory::optimizeJointTrajectory(
     const JointLimits& vel_limits,
     const size_t total_time_step,
     const double total_time_sec,
-    const double target_dt, double x_tolerance) {
+    const double target_dt, double y_pos_tolerance,
+    double y_rot_tolerance) {
     
     std::cout << "Creating arm trajectory..." << std::endl;
     
@@ -100,8 +101,8 @@ TrajectoryResult OptimizeTrajectory::optimizeJointTrajectory(
     gtsam::Symbol final_key('x', total_time_step);
     
     gtsam::Vector6 pose_sigmas;
-    pose_sigmas << x_tolerance, 0.01, 0.01,  // roll, pitch, yaw rotation weights 
-                   0.01, 0.01, 0.01;        // x, y, z position weights
+    pose_sigmas << 0.01, y_rot_tolerance, 0.01,  // roll, pitch, yaw rotation weights 
+                   0.01, y_pos_tolerance, 0.01;        // x, y, z position weights
     auto workspace_model = gtsam::noiseModel::Diagonal::Sigmas(pose_sigmas);
 
     graph.add(gpmp2::GaussianPriorWorkspacePoseArm(
@@ -251,8 +252,8 @@ TrajectoryResult OptimizeTrajectory::optimizeTaskTrajectory(
     }
     
     gtsam::Vector6 pose_sigmas;
-    pose_sigmas << 0.01, 0.01, 0.01,  // x, y, z position weights (y is less punished)
-                   0.01, 0.2, 0.01;  // roll, pitch, yaw rotation weights
+    pose_sigmas << 0.01, y_rot_tolerance, 0.01,  // x, y, z position weights (y is less punished)
+                   0.01, y_pos_tolerance, 0.01;  // roll, pitch, yaw rotation weights
     auto workspace_model = gtsam::noiseModel::Diagonal::Sigmas(pose_sigmas);
     
     if(target_pose_only){

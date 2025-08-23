@@ -3,6 +3,7 @@ add_library(TrajectoryRealTime
     src/move.cpp
     src/plan.cpp
     src/sdf.cpp
+    src/core.cpp
 )
 
 # Link against other project libraries and external dependencies

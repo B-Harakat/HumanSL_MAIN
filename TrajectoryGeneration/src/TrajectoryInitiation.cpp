@@ -312,7 +312,7 @@ gtsam::Values InitializeTrajectory::initJointTrajectoryFromVicon(
         double y_compensation = 0.0;
         if(tune_pose){
             if(j == 0) y_compensation = 0.0;
-            else y_compensation = (rand() % 21) / 100.0;
+            else y_compensation = (rand() % 15) / 100.0;
         }
 
         // Calculate modified tube point

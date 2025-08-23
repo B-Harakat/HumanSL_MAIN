@@ -128,21 +128,33 @@ void updateHumanInfo(HumanInfo& human_info, std::vector<MarkerData>& human){
         min_z = std::min(min_z, z);
         max_z = std::max(max_z, z);
 
+        // std::cout << marker.name <<"\n";
+
         if(marker.name == "human_RFIN"){
+            // std::cout << "Found RFIN" << "\n";
             human_info.RFIN = gtsam::Point3(x, y, z);
+            human_info.RFIN_occluded = false;
+
+            // std::cout<< "Found RFIN\n";
         }
+     
 
         if(marker.name == "human_LFIN"){
             human_info.LFIN = gtsam::Point3(x, y, z);
+            human_info.LFIN_occluded = false;
         }
+      
 
         if(marker.name == "human_RFHD"){
             human_info.RFHD = gtsam::Point3(x, y, z);
+            human_info.RFHD_occluded = false;
         }
 
         if(marker.name == "human_LFHD"){
             human_info.LFHD = gtsam::Point3(x, y, z);
+            human_info.LFHD_occluded = false;
         }
+    
     }
     
     human_info.human_points = human_points;
@@ -243,6 +255,8 @@ void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose
         std::abs(tube_info_snapshot.direction.y()) > std::abs(tube_info_snapshot.direction.z())) {
         tube_info_array.push_back(tube_info_snapshot);
     }
+
+    
 
     if(tube_info_array.size() >= 100){
         tube_info_array.pop_front();
@@ -438,15 +452,15 @@ void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose
     }
 
     // Maintain array size for moving average (similar to tube_info_array)
-    if (left_base_array.size() >= 100) {
+    if (left_base_array.size() >= 20) {
         left_base_array.pop_front();
     }
-    if (right_base_array.size() >= 100) {
+    if (right_base_array.size() >= 20) {
         right_base_array.pop_front();
     }
 
     // Calculate moving average poses every 10 counter cycles (similar to tube_info)
-    if (left_base_array.size() >= 100 && counter == 0) {
+    if (left_base_array.size() >= 20 && counter % 5 == 0) {
         // Calculate average left_base pose
         gtsam::Point3 avg_left_translation = gtsam::Point3(0, 0, 0);
         gtsam::Vector3 avg_left_rotation_vector = gtsam::Vector3::Zero();
@@ -485,45 +499,44 @@ void updateViconInfo(ViconInterface& vicon, gtsam::Pose3& left_base, gtsam::Pose
         right_base = right_base_current;
     }
     
-    int max_size = 30;
+    int max_size = 150;
 
-    if(human_info.LFIN.occluded == false){
-        double x = human_info.LFIN.x() / 1000;
-        double y = human_info.LFIN.y() / 1000;
-        double z = human_info.LFIN.z() / 1000;
+    {
+    double x = human_info.LFIN.x();
+    double y = human_info.LFIN.y();
+    double z = human_info.LFIN.z();
 
-        left_finger_pos_array.push_back(Eigen::Vector3d(x,y,z));
+    left_finger_pos_array.push_back(Eigen::Vector3d(x,y,z));
 
-        if(left_finger_pos_array.size() > max_size) left_finger_pos_array.pop_front();
+    if(left_finger_pos_array.size() > max_size) left_finger_pos_array.pop_front();
+    }
+    
+    {
+    double x = human_info.RFIN.x();
+    double y = human_info.RFIN.y();
+    double z = human_info.RFIN.z();
+
+    right_finger_pos_array.push_back(Eigen::Vector3d(x,y,z));
+
+    if(right_finger_pos_array.size() > max_size) right_finger_pos_array.pop_front();
     }
 
-    if(human_info.RFIN.occluded == false){
-        double x = human_info.RFIN.x() / 1000;
-        double y = human_info.RFIN.y() / 1000;
-        double z = human_info.RFIN.z() / 1000;
+    {
+    double xr = human_info.RFHD.x();
+    double yr = human_info.RFHD.y();
+    double zr = human_info.RFHD.z();
 
-        right_finger_pos_array.push_back(Eigen::Vector3d(x,y,z));
+    double xl = human_info.LFHD.x();
+    double yl = human_info.LFHD.y();
+    double zl = human_info.LFHD.z();
 
-        if(right_finger_pos_array.size() > max_size) right_finger_pos_array.pop_front();
-    }
+    double x = (xr+xl) /2;
+    double y = (yr+yl) /2;
+    double z = (zr+zl) /2;
 
-    if(human_info.RFHD.occluded == false && human_info.LFHD.occluded){
+    forehead_pos_array.push_back(Eigen::Vector3d(x,y,z));
 
-        double xr = human_info.RFHD.x() / 1000;
-        double yr = human_info.RFHD.y() / 1000;
-        double zr = human_info.RFHD.z() / 1000;
-
-        double xl = human_info.LFHD.x() / 1000;
-        double yl = human_info.LFHD.y() / 1000;
-        double zl = human_info.LFHD.z() / 1000;
-
-        double x = (xr+xl) /2;
-        double y = (yr+yl) /2;
-        double z = (zr+zl) /2;
-
-        forehead_pos_array.push_back(Eigen::Vector3d(x,y,z));
-
-        if(forehead_pos_array.size() > max_size) forehead_pos_array.pop_front();
+    if(forehead_pos_array.size() > max_size) forehead_pos_array.pop_front();
     }
 
     Eigen::Vector3d avg_lfin = Eigen::Vector3d::Zero();
@@ -689,11 +702,33 @@ gtsam::Pose3 calculateFramePose(const Eigen::Vector3d& world_p1,
 }
 
 
-void state_monitor(Eigen::Vector3d& avg_lfin, Eigen::Vector3d& avg_rfin, Eigen::Vector3d& avg_head, TubeInfo& avg_tube_info, std::atomic<int> state_idx){
+void state_monitor(Eigen::Vector3d& lfin_info, Eigen::Vector3d& rfin_info, Eigen::Vector3d& head_info, TubeInfo& tube_info, std::atomic<int>& state_idx, std::shared_mutex& vicon_data_mutex){
 
+    static int counter = 0;
+
+    counter++;
+
+    Eigen::Vector3d avg_lfin;
+    Eigen::Vector3d avg_rfin;
+    Eigen::Vector3d avg_head;
+    TubeInfo avg_tube_info;
+
+    {
+        std::shared_lock<std::shared_mutex> vicon_lock(vicon_data_mutex);
+        avg_lfin = lfin_info;
+        avg_rfin = rfin_info;
+        avg_head = head_info;
+        avg_tube_info = tube_info;
+    }
+    
     static std::deque<double> rfin_head_delta_array;
     double avg_delta = 0;
 
+    if(counter == 100){
+    std::cout<<"rfin data: " << avg_rfin.x() << ", "<<avg_rfin.y()<<", "<<avg_rfin.z()<<"\n";
+    std::cout<<"lfin data: " << avg_lfin.x() << ", "<<avg_lfin.y()<<", "<<avg_lfin.z()<<"\n";
+    std::cout<<"head data: " << avg_head.x() << ", "<<avg_head.y()<<", "<<avg_head.z()<<"\n";
+    }
     bool rfin_on_tube = false;
     bool lfin_on_tube = false;
     bool tube_on_head = false;
@@ -735,11 +770,11 @@ void state_monitor(Eigen::Vector3d& avg_lfin, Eigen::Vector3d& avg_rfin, Eigen::
     }
 
 
-    if(rfin_tube_distance < 0.05){  // 5cm threshold
+    if(rfin_tube_distance < 0.12){  // 5cm threshold
         rfin_on_tube = true;
     }
 
-    if(lfin_tube_distance < 0.05){
+    if(lfin_tube_distance < 0.12){
         lfin_on_tube = true;
     }
 
@@ -747,8 +782,16 @@ void state_monitor(Eigen::Vector3d& avg_lfin, Eigen::Vector3d& avg_rfin, Eigen::
         tube_on_head = true;
     }
 
-    if(lfin_on_tube && avg_delta > 0.45){
+    if(lfin_on_tube && avg_delta > 0.35){
         r_thumbs_up = true;
+    }
+
+    if(counter == 100){
+        std::cout<<"rfin tube dist: " << rfin_tube_distance <<"\n";
+        std::cout<<"lfin tube dist: " << lfin_tube_distance <<"\n";
+        std::cout<<"avg delta dist: " << avg_delta << "\n";
+        std::cout<<"tube_head_distance: " << tube_head_distance << "\n";
+        counter = 0;
     }
 
 

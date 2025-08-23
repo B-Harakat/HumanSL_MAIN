@@ -25,6 +25,10 @@ namespace Filter {
     void ini_butterworth_pose();
     VectorXd butterworth_filter_pose(const VectorXd& current_pose_error);
 
+    // function for velocity filtering  
+    void ini_butterworth_velocity();
+    VectorXd butterworth_filter_velocity(const VectorXd& current_velocity);
+
 };
 
 

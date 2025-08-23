@@ -75,6 +75,7 @@ bool chicken_head_impedance_control_single(k_api::Base::BaseClient* base, k_api:
 
 void updateJointInfo(k_api::BaseCyclic::BaseCyclicClient* base_cyclic, 
                        std::vector<double>& q_cur,
+                       std::vector<double>& u_cur,
                        std::shared_mutex& joint_mutex);
 
 bool move_gripper(k_api::BaseCyclic::BaseCyclicClient* base_cyclic,

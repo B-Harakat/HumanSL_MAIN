@@ -176,6 +176,7 @@ configure_file(
 
 # add executables using function macro
 add_project_executable(main main.cpp)
+add_project_executable(main_impedance main_impedance.cpp)
 
 # add_project_executable(money_file money_file.cpp)
 # add_project_executable(test_vicon test_vicon.cpp)

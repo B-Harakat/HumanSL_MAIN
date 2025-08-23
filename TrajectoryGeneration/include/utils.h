@@ -66,6 +66,10 @@ struct HumanInfo {
     gtsam::Point3 LFIN;
     gtsam::Point3 RFHD;
     gtsam::Point3 LFHD;
+    bool RFIN_occluded;
+    bool LFIN_occluded;
+    bool RFHD_occluded;
+    bool LFHD_occluded;
 };
 
 struct TubeInfo {

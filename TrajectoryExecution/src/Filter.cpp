@@ -11,12 +11,19 @@
 const double b[] = {0.0001081, 0.0002161, 0.0001081}; // Butterworth filter numerator coefficients
 const double a[] = {1.0, -1.9704, 0.9708};           // Butterworth filter denominator coefficients
 
+// Parameters for velocity filter (higher cutoff frequency, less aggressive)
+const double b_vel[] = {0.0976, 0.1953, 0.0976}; // Velocity filter numerator coefficients 
+const double a_vel[] = {1.0, -0.6131, 0.2066};   // Velocity filter denominator coefficients
+
 // Initialize filter state matrices for each dq element
 Matrix<double, 6, 2> prev_dq = Matrix<double, 6, 2>::Zero();      // Previous dq inputs
 Matrix<double, 6, 2> prev_output = Matrix<double, 6, 2>::Zero();  // Previous dq outputs
 
 Matrix<double, 6, 2> prev_pose_error = Matrix<double, 6, 2>::Zero();
 Matrix<double, 6, 2> prev_pose_output = Matrix<double, 6, 2>::Zero();
+
+Matrix<double, 6, 2> prev_velocity = Matrix<double, 6, 2>::Zero();
+Matrix<double, 6, 2> prev_velocity_output = Matrix<double, 6, 2>::Zero();
 
 
 //----------------------------------------------------------
@@ -30,6 +37,11 @@ void Filter::ini_butterworth(){
 void Filter::ini_butterworth_pose(){
     prev_pose_error = Matrix<double, 6, 2>::Zero();
     prev_pose_output = Matrix<double, 6, 2>::Zero();
+}
+
+void Filter::ini_butterworth_velocity(){
+    prev_velocity = Matrix<double, 6, 2>::Zero();
+    prev_velocity_output = Matrix<double, 6, 2>::Zero();
 }
 
 
@@ -93,4 +105,26 @@ VectorXd Filter::butterworth_filter_pose(const VectorXd& current_pose_error) {
     }
     
     return filtered_pose_error;
+}
+
+VectorXd Filter::butterworth_filter_velocity(const VectorXd& current_velocity) {
+    VectorXd filtered_velocity(6);
+    
+    for (int i = 0; i < 6; ++i) {
+        // Use velocity-specific filter coefficients
+        double output = b_vel[0] * current_velocity[i]
+                        + b_vel[1] * prev_velocity(i, 0) + b_vel[2] * prev_velocity(i, 1)
+                        - a_vel[1] * prev_velocity_output(i, 0) - a_vel[2] * prev_velocity_output(i, 1);
+
+        // Update filter states
+        prev_velocity(i, 1) = prev_velocity(i, 0);
+        prev_velocity(i, 0) = current_velocity[i];
+        
+        prev_velocity_output(i, 1) = prev_velocity_output(i, 0);
+        prev_velocity_output(i, 0) = output;
+        
+        filtered_velocity[i] = output;
+    }
+    
+    return filtered_velocity;
 }

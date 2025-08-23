@@ -86,20 +86,20 @@ gtsam::Pose3 Gen3Arm::create_target_pose(const HumanInfo& human_info,
     return target_pose;
 }
 
-gtsam::Pose3 Gen3Arm::over_head_pose(const HumanInfo& human_info,
+gtsam::Pose3 Gen3Arm::over_head_pose(const Eigen::Vector3d& head_info,
                             const gtsam::Pose3& base_pose,             
                             const gtsam::Pose3& start_pose,
                             const double& offset_from_base_y,
-                            const double& offset_from_human_mid_x,
-                            const double& offset_from_human_max_z) {
+                            const double& offset_from_head_x,
+                            const double& offset_from_head_z) {
     
     // Calculate target y position
     gtsam::Point3 start_pos = start_pose.translation();
     
     
     double target_y = base_pose.translation().y() + offset_from_base_y;
-    double target_x = human_info.bounds.min_x + (human_info.bounds.max_x - human_info.bounds.min_x)/2 + offset_from_human_mid_x;
-    double target_z = human_info.bounds.max_z + offset_from_human_max_z;
+    double target_x = head_info.x() + offset_from_head_x;
+    double target_z = head_info.z() + offset_from_head_z;
 
     gtsam::Rot3 base_orientation = gtsam::Rot3::Rz(M_PI); // 180 degrees about z-axis
     gtsam::Rot3 target_orientation;
@@ -177,7 +177,8 @@ void Gen3Arm::plan_joint(JointTrajectory& trajectory,
                      double offset_from_tube_z, 
                      double total_time_sec, 
                      size_t total_time_step,
-                     int control_frequency, bool tune_pose, double x_tolerance) {
+                     int control_frequency, bool tune_pose, 
+                     double y_pos_tolerance, double y_rot_tolerance) {
     
     std::unique_ptr<gpmp2::ArmModel> arm_model = createArmModel(base_pose, dh_params_);
     arm_model_logs  = *arm_model;
@@ -227,13 +228,14 @@ void Gen3Arm::plan_joint(JointTrajectory& trajectory,
             result = optimizeJointTrajectory(
                                     *arm_model, *sdf, init_values, best_end_pose, 
                                     start_conf, start_vel, pos_limits_, vel_limits_, 
-                                    total_time_step, total_time_sec, dt, x_tolerance);
+                                    total_time_step, total_time_sec, dt, 
+                                    y_pos_tolerance, y_rot_tolerance);
             
             auto optimization_end_time = std::chrono::high_resolution_clock::now();
             auto optimization_duration = std::chrono::duration_cast<std::chrono::milliseconds>(optimization_end_time - optimization_start_time);
             total_optimization_duration += optimization_duration;
 
-            if(result.final_error < 1000.0) break;
+            if(result.final_error < 50.0) break;
 
             counter++;
             best_final_error = (best_final_error > result.final_error) ? result.final_error : best_final_error;
@@ -266,7 +268,8 @@ void Gen3Arm::plan_joint(JointTrajectory& trajectory,
                      const gtsam::Pose3& target_pose, 
                      double total_time_sec,
                      size_t total_time_step,
-                     int control_frequency) {
+                     int control_frequency,
+                    double y_pos_tolerance, double y_rot_tolerance) {
     
     std::unique_ptr<gpmp2::ArmModel> arm_model = createArmModel(base_pose, dh_params_);
     arm_model_logs  = *arm_model;
@@ -312,13 +315,14 @@ void Gen3Arm::plan_joint(JointTrajectory& trajectory,
             result = optimizeJointTrajectory(
                                     *arm_model, *sdf, init_values, target_pose, 
                                     start_conf, start_vel, pos_limits_, vel_limits_, 
-                                    total_time_step, total_time_sec, dt);
+                                    total_time_step, total_time_sec, dt, 
+                                    y_pos_tolerance, y_rot_tolerance);
             
             auto optimization_end_time = std::chrono::high_resolution_clock::now();
             auto optimization_duration = std::chrono::duration_cast<std::chrono::milliseconds>(optimization_end_time - optimization_start_time);
             total_optimization_duration += optimization_duration;
 
-            if(result.final_error < 1000.0) break;
+            if(result.final_error < 50.0) break;
 
             counter++;
             best_final_error = (best_final_error > result.final_error) ? result.final_error : best_final_error;
@@ -351,7 +355,8 @@ void Gen3Arm::plan_joint(JointTrajectory& trajectory,
                      const gtsam::Pose3& base_pose, 
                      double total_time_sec, 
                      size_t total_time_step,
-                     int control_frequency) {
+                     int control_frequency,
+                    double y_pos_tolerance, double y_rot_tolerance) {
     
     std::unique_ptr<gpmp2::ArmModel> arm_model = createArmModel(base_pose, dh_params_);
     arm_model_logs  = *arm_model;
@@ -380,7 +385,7 @@ void Gen3Arm::plan_joint(JointTrajectory& trajectory,
     TrajectoryResult result = optimizeJointTrajectory(
                             *arm_model, *sdf, init_values, target_pose, 
                             start_conf, start_vel, pos_limits_, vel_limits_, 
-                            total_time_step, total_time_sec, dt);
+                            total_time_step, total_time_sec, dt, y_pos_tolerance, y_rot_tolerance);
     
     result_logs = result;
     target_pose_logs = target_pose;
@@ -795,65 +800,65 @@ void Gen3Arm::plan_task(JointTrajectory& trajectory,
 
     while(true){
 
-            std::deque<gtsam::Pose3> pose_trajectory;
-            gtsam::Values init_values;
-            auto init_start_time = std::chrono::high_resolution_clock::now();
+        std::deque<gtsam::Pose3> pose_trajectory;
+        gtsam::Values init_values;
+        auto init_start_time = std::chrono::high_resolution_clock::now();
 
-            if(target_pose_only){
-                try{
-                    init_values = 
-                            initJointTrajectoryFromTarget(start_conf, end_pose, 
-                                    base_pose, total_time_step);
-                    
-                    // Fill pose_trajectory with identity poses up to total_time_step + 1 size
-                    pose_trajectory.resize(total_time_step + 1);
-                    for (int i = 0; i < total_time_step; ++i) {
-                        pose_trajectory[i] = gtsam::Pose3();
-                    }
-                    // Set the last entry to end_pose
-                    pose_trajectory[total_time_step] = end_pose;
-                    
+        if(target_pose_only){
+            try{
+                init_values = 
+                        initJointTrajectoryFromTarget(start_conf, end_pose, 
+                                base_pose, total_time_step);
+                
+                // Fill pose_trajectory with identity poses up to total_time_step + 1 size
+                pose_trajectory.resize(total_time_step + 1);
+                for (int i = 0; i < total_time_step; ++i) {
+                    pose_trajectory[i] = gtsam::Pose3();
                 }
-                catch(const std::exception& e){
-                    continue;
-                }
+                // Set the last entry to end_pose
+                pose_trajectory[total_time_step] = end_pose;
+                
             }
-            else{
-                try{
-                    init_values = 
-                            initTaskSpaceTrajectory(start_pose, end_pose, 
-                                    base_pose, start_conf, pose_trajectory,
-                                        percentage, height, total_time_step); 
-                                                                        
-                }
-                catch(const std::exception& e){
-                    continue;
-                }
+            catch(const std::exception& e){
+                continue;
             }
+        }
+        else{
+            try{
+                init_values = 
+                        initTaskSpaceTrajectory(start_pose, end_pose, 
+                                base_pose, start_conf, pose_trajectory,
+                                    percentage, height, total_time_step); 
+                                                                    
+            }
+            catch(const std::exception& e){
+                continue;
+            }
+        }
 
-            auto init_end_time = std::chrono::high_resolution_clock::now();
-            auto initiation_duration = std::chrono::duration_cast<std::chrono::milliseconds>(init_end_time - init_start_time);
-            total_initiation_duration += initiation_duration;
-                                                
-            std::cout << "Final Pose: " << pose_trajectory.back() << "\n";
-            // Use the actual best pose found by our IK search (not a temporary pose)
-            
-            auto optimization_start_time = std::chrono::high_resolution_clock::now();
-            result = optimizeTaskTrajectory(
-                                    *arm_model, *sdf, init_values, pose_trajectory, 
-                                    start_conf, pos_limits_, vel_limits_, 
-                                    total_time_step, total_time_sec, dt, target_pose_only, 
-                                    y_pos_tolerance, y_rot_tolerance);
-            
-            auto optimization_end_time = std::chrono::high_resolution_clock::now();
-            auto optimization_duration = std::chrono::duration_cast<std::chrono::milliseconds>(optimization_end_time - optimization_start_time);
-            total_optimization_duration += optimization_duration;
+        auto init_end_time = std::chrono::high_resolution_clock::now();
+        auto initiation_duration = std::chrono::duration_cast<std::chrono::milliseconds>(init_end_time - init_start_time);
+        total_initiation_duration += initiation_duration;
+                                            
+        std::cout << "Final Pose: " << pose_trajectory.back() << "\n";
+        // Use the actual best pose found by our IK search (not a temporary pose)
+        
+        auto optimization_start_time = std::chrono::high_resolution_clock::now();
+        result = optimizeTaskTrajectory(
+                                *arm_model, *sdf, init_values, pose_trajectory, 
+                                start_conf, pos_limits_, vel_limits_, 
+                                total_time_step, total_time_sec, dt, target_pose_only, 
+                                y_pos_tolerance, y_rot_tolerance);
+        
+        auto optimization_end_time = std::chrono::high_resolution_clock::now();
+        auto optimization_duration = std::chrono::duration_cast<std::chrono::milliseconds>(optimization_end_time - optimization_start_time);
+        total_optimization_duration += optimization_duration;
 
-            if(result.final_error < 1000.0) break;
+        if(result.final_error < 50.0) break;
 
-            counter++;
-            best_final_error = (best_final_error > result.final_error) ? result.final_error : best_final_error;
-            if(counter > 10) break;
+        counter++;
+        best_final_error = (best_final_error > result.final_error) ? result.final_error : best_final_error;
+        if(counter > 10) break;
     }
 
     
@@ -867,7 +872,7 @@ void Gen3Arm::plan_task(JointTrajectory& trajectory,
 
     trajectory = convertTrajectory<JointTrajectory>(result, dt); 
 
-    if(counter > 3){ 
+    if(counter > 10){ 
             visualizeTrajectory(trajectory.pos, *arm_model, dataset_logs, base_pose);
             
             throw std::runtime_error((std::stringstream{} << "Could not generate good enough trajectory, best final error: " << best_final_error << "\n").str());

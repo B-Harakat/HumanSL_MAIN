@@ -522,7 +522,7 @@ VectorXd Controller::joint_impedance_controller(Dynamics &robot, VectorXd& q, Ve
     for(auto& i : gravity_matrix){std::cout << i << ", ";}
     std::cout << "\n";
 
-    u = -gravity_matrix + K_joint * e_q + K_integral * integral_error;
+    u = (K_joint * e_q) + (D_joint * e_dq) + (K_integral * integral_error);
     // u[6] = K_joint.diagonal()[6] * e_q[6] + D_joint.diagonal()[6] * e_dq[6] + K_integral.diagonal()[6] * integral_error[6];
     // u = gravity + K_diag * eq + K_I * integral error (in position)
 
@@ -599,7 +599,7 @@ VectorXd Controller::chicken_head_impedance_controller(Dynamics& robot,
     Matrix3d rot_end = T_B7.block<3, 3>(0, 0);
     dp = jacobian * dq;  // Current Cartesian velocity
 
-    dp = butterworth_filter_pose(dp);
+    // dp = butterworth_filter_pose(dp);
     
     // Desired pose (stationary target)
     Vector3d pos_d = p_d.head<3>();
@@ -608,21 +608,22 @@ VectorXd Controller::chicken_head_impedance_controller(Dynamics& robot,
     // Compute 6-DOF pose error
     pos_difference(pos_end, pos_d, rot_end, rot_d, e);
 
+
     // Apply deadband to error
-    const double deadband_pos = 0.02;  // 1cm for position, 0.01 rad for orientation
-    const double deadband_rot = 0.05;
-    for (int i = 0; i < e.size(); i++) {
-        if(i < 3){
-            if (abs(e(i)) < deadband_pos) {
-                e(i) = 0.0;
-            }
-        }
-        else{
-            if (abs(e(i)) < deadband_rot) {
-                e(i) = 0.0;
-            }
-        }
-    }
+    // const double deadband_pos = 0.02;  // 1cm for position, 0.01 rad for orientation
+    // const double deadband_rot = 0.05;
+    // for (int i = 0; i < e.size(); i++) {
+    //     if(i < 3){
+    //         if (abs(e(i)) < deadband_pos) {
+    //             e(i) = 0.0;
+    //         }
+    //     }
+    //     else{
+    //         if (abs(e(i)) < deadband_rot) {
+    //             e(i) = 0.0;
+    //         }
+    //     }
+    // }
     
     // Thread-local variable to store integral error
     static thread_local VectorXd e_integral = VectorXd::Zero(6);
@@ -636,7 +637,7 @@ VectorXd Controller::chicken_head_impedance_controller(Dynamics& robot,
     
     // PI Control Law (no velocity term for mobile platform)
     // For stationary target: ddp_d = 0, dp_d = 0
-    VectorXd force = g_x - K_d*e - K_i*e_integral;
+    VectorXd force = -(K_d*e) + (K_i*e_integral);
     
     // Map Cartesian forces to joint torques
     u = jacobian_T * force;
@@ -726,4 +727,38 @@ VectorXd Controller::chicken_head_velocity_controller(Dynamics& robot,
     std::cout<<"\n";
     
     return dq_desired;   
+}
+
+
+VectorXd Controller::chicken_head_velocity_torque_controller(Dynamics& robot,
+    VectorXd& q, VectorXd& dq, MatrixXd& T_B7,
+    VectorXd& q_desired, VectorXd& dp_measured, VectorXd& K_joint_diag,
+    double dt) {
+    
+    // Calculate dq_d using finite difference
+    static thread_local VectorXd q_desired_prev = VectorXd::Zero(7);
+    static thread_local bool first_call = true;
+    
+    VectorXd dq_d(7);
+    if (first_call) {
+        q_desired_prev = q_desired;
+        dq_d = VectorXd::Zero(7);
+        first_call = false;
+    } else {
+        dq_d = (q_desired - q_desired_prev) / dt;
+        q_desired_prev = q_desired;
+    }
+    
+    // Create dummy variables for unused parameters
+    VectorXd ddq = VectorXd::Zero(7);
+    VectorXd ddq_d = VectorXd::Zero(7);
+    
+    // Create integral gain matrix
+    VectorXd K_integral_diag = K_joint_diag * 0.02;
+    
+    // Use joint impedance controller
+    VectorXd u = joint_impedance_controller(robot, q, dq, ddq, q_desired, dq_d, ddq_d, 
+                                           K_joint_diag, K_integral_diag, 1.0/dt, dt);
+    
+    return u;   
 }
